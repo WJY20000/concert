@@ -59,6 +59,10 @@ export function validate(config) {
     check(nonempty(stage.ready), `${name}.ready`);
     if (name === 'detail' || name === 'checkout') {
       check(nonempty(stage.login) && nonempty(stage.button) && nonempty(stage.soldOut), name);
+      check(Array.isArray(stage.buttonTexts) && stage.buttonTexts.length > 0 &&
+        stage.buttonTexts.every(nonempty), `${name}.buttonTexts`);
+      check(stage.soldOutButtonTexts === undefined || (Array.isArray(stage.soldOutButtonTexts) &&
+        stage.soldOutButtonTexts.every(nonempty)), `${name}.soldOutButtonTexts`);
     }
   }
   check(nonempty(config.order.id) && nonempty(config.order.pending), 'order');

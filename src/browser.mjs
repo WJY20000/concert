@@ -45,6 +45,7 @@ export function createBrowser(page, config) {
   let active = page;
   let lookup;
   let detailLookup;
+  let verifiedOrderTab;
   const watched = [page];
   function usePopup(popup) {
     active = popup;
@@ -103,7 +104,14 @@ export function createBrowser(page, config) {
 
     async click(view, timeout) {
       if (view.target !== active || active.url() !== view.url) return false;
-      await active.locator(`css=${config[view.name].button}`).filter({ visible: true }).click({ timeout });
+      // Retain the observed label in the locator while Playwright waits for actionability.
+      const label = normalize(view.values.button.text);
+      const escaped = label.split(' ')
+        .map(token => token.replace(/[-[\]/{}()*+?.\\^$|]/gu, '\\$&'))
+        .join('\\s+');
+      await active.locator(`css=${config[view.name].button}`)
+        .filter({ visible: true, hasText: new RegExp(`^\\s*${escaped}\\s*$`, 'u') })
+        .click({ timeout });
       return true;
     },
 
@@ -132,9 +140,16 @@ export function createBrowser(page, config) {
       return view ? { ...view, name: 'order' } : null;
     },
 
+    keepVerifiedOrder(view) {
+      verifiedOrderTab = view.target;
+    },
+
     async closeLookups() {
       for (const target of watched) target.off('popup', usePopup);
-      await Promise.allSettled([lookup?.close(), detailLookup?.close()]);
+      await Promise.allSettled([
+        lookup?.close(),
+        verifiedOrderTab ? verifiedOrderTab.bringToFront() : detailLookup?.close(),
+      ]);
     },
   };
 }

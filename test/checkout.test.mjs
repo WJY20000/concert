@@ -31,7 +31,11 @@ test('example config parses and remote debugging stays local', async () => {
 });
 
 function stage(path) {
-  return { route: { path }, ready: '#loaded', login: '#signed-in', button: '#action', soldOut: '#sold-out' };
+  return {
+    route: { path }, ready: '#loaded', login: '#signed-in', button: '#action', soldOut: '#sold-out',
+    buttonTexts: [path === '/detail' ? 'Open checkout' : 'Create order'],
+    soldOutButtonTexts: ['提交缺货登记'],
+  };
 }
 
 function fixtureConfig(saleAt) {
@@ -102,12 +106,19 @@ async function runScenario(t, scenario = {}) {
         const soldOut = scenario.soldOut ? '<p id="sold-out">Sold out</p>' : '';
         const captcha = scenario.captcha ? '<p id="captcha">Challenge</p>' : '';
         const delayed = scenario.opensLate ? 'disabled' : '';
+        const actionText = scenario.buttonText ?? 'Create order';
+        const button = scenario.buttonText
+          ? '<div role="button" id="action">' + actionText + '</div>'
+          : '<button id="action" ' + delayed + '>' + actionText + '</button>';
         const unlock = scenario.opensLate
           ? `<script>setTimeout(() => document.querySelector('#action').disabled = false, Math.max(0, ${saleAt + 250} - Date.now()));</script>`
           : '';
-        return html(user + display(values) + soldOut + captcha +
-          `<button id="action" ${delayed}>Create order</button>${unlock}
-          <script>
+        const changeLabel = scenario.delayedLabel
+          ? '<script>setTimeout(() => document.querySelector("#action").textContent = "Create order", Math.max(0, ' +
+            (saleAt + 250) + ' - Date.now()));</script>'
+          : '';
+        return html(user + display(values) + soldOut + captcha + button + unlock + changeLabel +
+          `<script>
           document.querySelector('#action').onclick = async () => {
             const response = await fetch('/submit', { method: 'POST' });
             if (response.ok) location.assign('/order?id=mock-new');
@@ -163,6 +174,10 @@ async function runScenario(t, scenario = {}) {
   return {
     run, saleAt, timeline,
     counts: () => ({ entries, submissions, early }),
+    async retainedOrderTab() {
+      await browser.closeLookups();
+      return context.pages().some(tab => new URL(tab.url()).pathname === '/order');
+    },
     async returnToCheckout() {
       await page.goto(origin + '/checkout');
     },
@@ -199,6 +214,7 @@ for (const [name, setup, expectedStatus, field] of [
   ['wrong session', { values: { session: 'Matinee' } }, 'prefill_mismatch', 'session'],
   ['lost prefill', { missing: 'attendees' }, 'prefill_missing', 'attendees'],
   ['sold out', { soldOut: true }, 'sold_out'],
+  ['stock-registration button', { buttonText: '提交缺货登记' }, 'sold_out'],
   ['captcha', { captcha: true }, 'challenge_or_login'],
   ['observe mode', {}, 'observed'],
 ]) {
@@ -211,11 +227,20 @@ for (const [name, setup, expectedStatus, field] of [
   });
 }
 
+test('an enabled div with a presale label waits until the actual submit label appears', async t => {
+  const scenario = await runScenario(t, { buttonText: '即将开抢', delayedLabel: true });
+  const result = await scenario.run();
+  assert.equal(result.status, 'pending_payment');
+  assert.ok(Date.parse(result.submitAttemptAt) >= scenario.saleAt + 250);
+  assert.deepEqual(scenario.counts(), { entries: 0, submissions: 1, early: 0 });
+});
+
 test('submit timeout reconciles a matching order through the order list without resubmitting', async t => {
   const scenario = await runScenario(t, { timeout: true });
   const result = await scenario.run();
   assert.equal(result.status, 'pending_payment');
   assert.equal(scenario.timeline.find(event => event.event === 'order_confirmed')?.source, 'order_list');
+  assert.equal(await scenario.retainedOrderTab(), true);
   assert.deepEqual(scenario.counts(), { entries: 0, submissions: 1, early: 0 });
 });
 

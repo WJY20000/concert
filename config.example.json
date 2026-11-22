@@ -9,6 +9,8 @@
     "ready": ".your-event-page",
     "login": ".your-account-marker",
     "button": ".your-open-checkout-button",
+    "buttonTexts": ["立即购买", "立即预订"],
+    "soldOutButtonTexts": ["提交缺货登记", "缺货登记"],
     "soldOut": ".your-selected-ticket-sold-out"
   },
   "checkout": {
@@ -16,6 +18,8 @@
     "ready": ".your-checkout-form",
     "login": ".your-account-marker",
     "button": ".your-create-order-only-button",
+    "buttonTexts": ["提交订单", "同意以上协议并提交订单"],
+    "soldOutButtonTexts": ["缺货登记"],
     "soldOut": ".your-selected-ticket-sold-out"
   },
   "order": {

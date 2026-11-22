@@ -13,18 +13,30 @@ function compare(view, fields) {
   for (const [key, field] of Object.entries(fields)) {
     const selector = field[view.name];
     if (!selector) continue;
-    const expected = view.name === 'order' ? field.orderExpected : field.detailExpected;
+    let expected = field.expected;
+    if (view.name === 'detail') expected = field.detailExpected ?? expected;
+    if (view.name === 'order') expected = field.orderExpected ?? expected;
     const actual = text(view, `field_${key}`);
     if (!actual) return { status: 'prefill_missing', field: key };
-    if (actual !== normalize((view.name === 'checkout' ? null : expected) ?? field.expected)) {
+    if (actual !== normalize(expected)) {
       return { status: 'prefill_mismatch', field: key };
     }
   }
 }
 
+function isSoldOut(view, config) {
+  return view?.values.soldOut?.count > 0 ||
+    config[view?.name]?.soldOutButtonTexts?.some(label => normalize(label) === text(view, 'button'));
+}
+
+function canClick(view, config) {
+  return view.values.button?.enabled &&
+    config[view.name].buttonTexts.some(label => normalize(label) === text(view, 'button'));
+}
+
 function preflight(view, config) {
   if (view?.blocked) return { status: 'challenge_or_login' };
-  if (view?.values.soldOut?.count > 0) return { status: 'sold_out' };
+  if (isSoldOut(view, config)) return { status: 'sold_out' };
   if (!view || !['detail', 'checkout'].includes(view.name) || !shown(view, 'ready')) {
     return { status: 'page_unrecognized' };
   }
@@ -88,7 +100,12 @@ export async function runCheckout(browser, config, {
   const problem = preflight(initial, config);
   if (problem) return finish(problem.status, problem.field);
   const verifiedFields = Object.values(config.fields).filter(field => field[initial.name]).length;
-  record('preflight_checked', { page: initial.name, verifiedFields });
+  const buttonCount = initial.values.button?.count ?? 0;
+  let actionState = 'waiting';
+  if (buttonCount === 0) actionState = 'missing';
+  if (buttonCount > 1) actionState = 'ambiguous';
+  if (canClick(initial, config)) actionState = 'ready';
+  record('preflight_checked', { page: initial.name, verifiedFields, actionState });
   if (mode === 'observe') return finish('observed');
   if (now() >= sale + entryWindow) return finish('sale_window_elapsed');
 
@@ -118,7 +135,7 @@ export async function runCheckout(browser, config, {
     }
 
     const untilSale = sale - now();
-    if (untilSale > 0 || !view.values.button?.enabled || now() >= entryDeadline) {
+    if (untilSale > 0 || !canClick(view, config) || now() >= entryDeadline) {
       await sleep(untilSale > 0 ? Math.min(untilSale, untilSale > 5_000 ? 1_000 : pollMs) : pollMs);
       continue;
     }
@@ -148,7 +165,7 @@ export async function runCheckout(browser, config, {
     const latest = await readCurrent();
     const latestProblem = preflight(latest, config);
     if (latestProblem) return finish(latestProblem.status, latestProblem.field);
-    if (latest.name !== 'checkout' || !latest.values.button.enabled ||
+    if (latest.name !== 'checkout' || !canClick(latest, config) ||
         now() < sale || now() >= entryDeadline) return finish('page_changed_before_submit');
 
     firstAction();
@@ -166,7 +183,7 @@ export async function runCheckout(browser, config, {
       const current = await readCurrent();
       if (current?.blocked) return finish('challenge_or_login');
       if (verifiedOrder(current, config, baseline)) return confirmed('checkout');
-      if (current?.name === 'checkout' && current.values.soldOut?.count > 0) {
+      if (current?.name === 'checkout' && isSoldOut(current, config)) {
         record('sold_out_after_submit');
         break;
       }
@@ -188,7 +205,10 @@ export async function runCheckout(browser, config, {
         const [order] = recent;
         const readback = await browser.readOrder(order.link, lookupTimeout).catch(() => null);
         if (readback?.blocked) return finish('challenge_or_login');
-        if (verifiedOrder(readback, config, baseline) === order.id) return confirmed('order_list');
+        if (verifiedOrder(readback, config, baseline) === order.id) {
+          browser.keepVerifiedOrder(readback);
+          return confirmed('order_list');
+        }
       }
       await sleep(Math.max(pollMs, 500));
     }
