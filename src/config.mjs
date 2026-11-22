@@ -70,9 +70,20 @@ export function validate(config) {
   check(config.orders.link === undefined || nonempty(config.orders.link), 'orders.link');
   check(matchesRoute(config.orders.url, config.origin, config.orders.route), 'orders.url');
   check(requiredFields.every(key => Object.hasOwn(config.fields ?? {}, key)), 'fields');
+  const selection = config.checkout.attendeeSelection;
+  if (selection !== undefined) {
+    check(selection && ['section', 'rows', 'name', 'control', 'checked', 'requiredCount']
+      .every(key => nonempty(selection[key])), 'checkout.attendeeSelection selectors');
+    const names = selection.names;
+    check(Array.isArray(names) && names.length > 0 && names.every(nonempty) &&
+      new Set(names.map(normalize)).size === names.length, 'checkout.attendeeSelection.names');
+  }
   for (const [key, field] of Object.entries(config.fields)) {
     check(/^[a-z][a-z0-9_]*$/u.test(key) && nonempty(field.expected) &&
-      nonempty(field.checkout) && nonempty(field.order), `fields.${key}`);
+      ((key === 'attendees' && selection) || nonempty(field.checkout)) && nonempty(field.order), `fields.${key}`);
+    if (key === 'attendees' && selection) {
+      check(normalize(field.expected) === selection.names.map(normalize).join(' '), 'fields.attendees.expected');
+    }
     for (const optional of ['detail', 'detailExpected', 'orderExpected']) {
       check(field[optional] === undefined || nonempty(field[optional]), `fields.${key}.${optional}`);
     }

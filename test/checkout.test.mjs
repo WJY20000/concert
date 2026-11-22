@@ -87,6 +87,7 @@ async function runScenario(t, scenario = {}) {
   let storedOrder;
   let early = 0;
   let entries = 0;
+  const viewerNames = ['Demo A', 'Demo B'];
   await context.route('**/*', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -100,7 +101,8 @@ async function runScenario(t, scenario = {}) {
     switch (url.pathname) {
       case '/detail':
         return html(user + display({ event: fields.event }) +
-          `<button id="action" onclick="location.href='/checkout?entered=1'">Open checkout</button></main>`);
+          (scenario.webEntry ? '<a href="/bad">扫码购票</a><a href="/checkout?entered=1">不，立即购票</a></main>' :
+            `<button id="action" onclick="location.href='/checkout?entered=1'">Open checkout</button></main>`));
       case '/checkout': {
         if (url.searchParams.has('entered')) {
           entries += 1;
@@ -108,6 +110,12 @@ async function runScenario(t, scenario = {}) {
         }
         const values = { ...fields, ...(scenario.values ?? {}) };
         if (scenario.missing) delete values[scenario.missing];
+        const viewerList = scenario.selectViewers ? '<section id="viewers"><p id="required">仅需选择' +
+          (scenario.wrongViewerCount ? 1 : 2) + '位</p>' +
+          [...viewerNames, 'Other'].map((name, index) =>
+            '<label class="viewer"><span class="name">' + name + '</span><input type="checkbox" ' +
+            ((index === 0 && scenario.onePreselected) || (index === 2 && scenario.wrongPreselected) ? 'checked' : '') +
+            '></label>').join('') + '</section>' : '';
         const soldOut = scenario.soldOut ? '<p id="sold-out">Sold out</p>' : '';
         const captcha = scenario.captcha ? '<p id="captcha">Challenge</p>' : '';
         const delayed = scenario.opensLate ? 'disabled' : '';
@@ -122,10 +130,11 @@ async function runScenario(t, scenario = {}) {
           ? '<script>setTimeout(() => document.querySelector("#action").textContent = "Create order", Math.max(0, ' +
             (saleAt + 250) + ' - Date.now()));</script>'
           : '';
-        return html(user + display(values) + soldOut + captcha + button + unlock + changeLabel +
+        return html(user + display(values) + viewerList + soldOut + captcha + button + unlock + changeLabel +
           `<script>
           document.querySelector('#action').onclick = async () => {
-            const response = await fetch('/submit', { method: 'POST' });
+            const selected = [...document.querySelectorAll('.viewer:has(:checked) .name')].map(element => element.textContent);
+            const response = await fetch('/submit', { method: 'POST', body: JSON.stringify(selected) });
             if (response.ok) location.assign(${JSON.stringify(scenario.paymentRedirect ? mockPayment : '/order?id=mock-new')});
           };
           </script></main>`);
@@ -140,6 +149,9 @@ async function runScenario(t, scenario = {}) {
         }
         if (!scenario.noOrder) {
           storedOrder = scenario.wrongOrder ? { ...match, fields: { ...fields, ticket: 'Tier B' } } : match;
+          if (scenario.selectViewers) {
+            storedOrder = { ...match, fields: { ...fields, attendees: request.postDataJSON().join(' ') } };
+          }
         }
         if (scenario.timeout) {
           // The server may have saved the order while the browser still waits for a response.
@@ -162,6 +174,18 @@ async function runScenario(t, scenario = {}) {
 
   saleAt = Date.now() + (scenario.checkPreSale ? 1_600 : 300);
   const config = fixtureConfig(saleAt);
+  if (scenario.webEntry) {
+    config.detail.button = 'a';
+    config.detail.buttonTexts = ['不，立即购票'];
+  }
+  if (scenario.selectViewers) {
+    config.checkout.attendeeSelection = {
+      section: '#viewers', rows: '.viewer', name: '.name', control: 'input',
+      checked: 'input:checked', requiredCount: '#required', names: viewerNames,
+    };
+    config.fields.attendees.expected = viewerNames.join(' ');
+    delete config.fields.attendees.checkout;
+  }
   await page.goto(origin + (scenario.detail ? '/detail' : '/checkout'));
   const browser = createBrowser(page, config);
   if (scenario.staleReadAtSale) {
@@ -303,3 +327,30 @@ test('submission reservation is atomic across competing workers', async t => {
   ]);
   assert.equal(results.filter(Boolean).length, 1);
 });
+
+test('web purchase link enters checkout and selects exactly two named viewers', async t => {
+  const scenario = await runScenario(t, { detail: true, webEntry: true, selectViewers: true });
+  assert.equal((await scenario.run()).status, 'pending_payment');
+  assert.equal(scenario.timeline.filter(event => event.event === 'attendee_selection_attempted').length, 2);
+  assert.deepEqual(scenario.counts(), { entries: 1, submissions: 1, early: 0 });
+});
+
+test('already selected viewer stays checked and observe mode leaves the selection untouched', async t => {
+  const scenario = await runScenario(t, { selectViewers: true, onePreselected: true });
+  assert.equal((await scenario.run('observe')).status, 'observed');
+  assert.equal(scenario.timeline.filter(event => event.event === 'attendee_selection_attempted').length, 0);
+  assert.equal((await scenario.run()).status, 'pending_payment');
+  assert.equal(scenario.timeline.filter(event => event.event === 'attendee_selection_attempted').length, 1);
+});
+
+for (const [setup, status] of [
+  [{ wrongViewerCount: true }, 'attendee_count_mismatch'],
+  [{ wrongPreselected: true }, 'unexpected_attendee_selected'],
+]) {
+  test(status + ' prevents viewer clicks and submission', async t => {
+    const scenario = await runScenario(t, { selectViewers: true, ...setup });
+    assert.equal((await scenario.run()).status, status);
+    assert.equal(scenario.timeline.filter(event => event.event === 'attendee_selection_attempted').length, 0);
+    assert.equal(scenario.counts().submissions, 0);
+  });
+}

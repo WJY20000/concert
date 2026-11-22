@@ -8,8 +8,8 @@
     "route": { "path": "/item.htm", "query": { "id": "123" } },
     "ready": ".your-event-page",
     "login": ".your-account-marker",
-    "button": ".your-open-checkout-button",
-    "buttonTexts": ["立即购买", "立即预订"],
+    "button": "a, button, [role=button]",
+    "buttonTexts": ["不，立即购票", "不， 立即购票", "立即购买", "立即预订"],
     "soldOutButtonTexts": ["提交缺货登记", "缺货登记"],
     "soldOut": ".your-selected-ticket-sold-out"
   },
@@ -20,7 +20,16 @@
     "button": ".your-create-order-only-button",
     "buttonTexts": ["提交订单", "同意以上协议并提交订单"],
     "soldOutButtonTexts": ["缺货登记"],
-    "soldOut": ".your-selected-ticket-sold-out"
+    "soldOut": ".your-selected-ticket-sold-out",
+    "attendeeSelection": {
+      "section": ".your-attendee-section",
+      "rows": ".your-attendee-row",
+      "name": ".your-attendee-name",
+      "control": ".your-attendee-checkbox",
+      "checked": ".your-checked-class, input:checked, [aria-checked=true]",
+      "requiredCount": ".your-required-attendee-count",
+      "names": ["演示甲", "演示乙"]
+    }
   },
   "order": {
     "route": { "origin": "https://buy.damai.cn", "path": "/replace-order-detail-path" },

@@ -9,8 +9,9 @@ function text(view, key) {
   return shown(view, key) ? normalize(view.values[key].text) : '';
 }
 
-function compare(view, fields) {
+function compare(view, fields, skipAttendees = false) {
   for (const [key, field] of Object.entries(fields)) {
+    if (skipAttendees && key === 'attendees') continue;
     const selector = field[view.name];
     if (!selector) continue;
     let expected = field.expected;
@@ -34,6 +35,31 @@ function canClick(view, config) {
     config[view.name].buttonTexts.some(label => normalize(label) === text(view, 'button'));
 }
 
+function attendeePlan(view, config) {
+  const selection = config.checkout.attendeeSelection;
+  if (view.name !== 'checkout' || !selection) return { missing: [] };
+  const names = selection.names.map(normalize);
+  const required = normalize(view.attendees?.required ?? '').match(/^(?:仅需选择\s*)?(\d+)(?:\s*位)?$/u);
+  const quantity = text(view, 'field_quantity').match(/^(\d+)(?:\s*张)?$/u);
+  if (!required || !quantity || Number(required[1]) !== names.length || Number(quantity[1]) !== names.length) {
+    return { status: 'attendee_count_mismatch' };
+  }
+  const rows = view.attendees.rows.map(row => ({ ...row, name: normalize(row.name) }));
+  if (rows.some(row => row.checked && !names.includes(row.name))) {
+    return { status: 'unexpected_attendee_selected' };
+  }
+  const missing = [];
+  for (const name of names) {
+    const matches = rows.filter(row => row.name === name);
+    if (matches.length !== 1) return { status: 'attendee_unidentified' };
+    if (!matches[0].checked) {
+      if (!matches[0].actionable) return { status: 'attendee_control_unavailable' };
+      missing.push(name);
+    }
+  }
+  return { missing };
+}
+
 function preflight(view, config) {
   if (view?.blocked) return { status: 'challenge_or_login' };
   if (isSoldOut(view, config)) return { status: 'sold_out' };
@@ -41,7 +67,11 @@ function preflight(view, config) {
     return { status: 'page_unrecognized' };
   }
   if (!shown(view, 'login')) return { status: 'login_unverified' };
-  return compare(view, config.fields);
+  const autoSelect = view.name === 'checkout' && Boolean(config.checkout.attendeeSelection);
+  const mismatch = compare(view, config.fields, autoSelect);
+  if (mismatch || !autoSelect) return mismatch;
+  const plan = attendeePlan(view, config);
+  if (plan.status) return plan;
 }
 
 function verifiedOrder(view, config, baseline) {
@@ -100,13 +130,18 @@ export async function runCheckout(browser, config, {
   const initial = await readCurrent();
   const problem = preflight(initial, config);
   if (problem) return finish(problem.status, problem.field);
-  const verifiedFields = Object.values(config.fields).filter(field => field[initial.name]).length;
+  const verifiedFields = Object.entries(config.fields).filter(([key, field]) =>
+    field[initial.name] && !(key === 'attendees' && initial.name === 'checkout' && config.checkout.attendeeSelection)).length;
   const buttonCount = initial.values.button?.count ?? 0;
   let actionState = 'waiting';
   if (buttonCount === 0) actionState = 'missing';
   if (buttonCount > 1) actionState = 'ambiguous';
   if (canClick(initial, config)) actionState = 'ready';
-  record('preflight_checked', { page: initial.name, verifiedFields, actionState });
+  record('preflight_checked', {
+    page: initial.name, verifiedFields, actionState,
+    ...(initial.name === 'checkout' && config.checkout.attendeeSelection
+      ? { attendeesToSelect: attendeePlan(initial, config).missing.length } : {}),
+  });
   if (mode === 'observe') return finish('observed');
   if (now() >= sale + entryWindow) return finish('sale_window_elapsed');
 
@@ -116,6 +151,7 @@ export async function runCheckout(browser, config, {
   const baseline = new Set(existing.orders.map(order => order.id));
   record('orders_baseline_loaded');
 
+  const attemptedAttendees = new Set();
   let entered = false;
   let entryDeadline = sale + entryWindow;
   while (now() < entryDeadline) {
@@ -144,6 +180,24 @@ export async function runCheckout(browser, config, {
     }
     if (readStartedAt < sale) continue;
     if (now() >= entryDeadline) break;
+    const [nextAttendee] = attendeePlan(view, config).missing;
+    if (nextAttendee) {
+      if (attemptedAttendees.has(nextAttendee)) {
+        await sleep(fastPollMs);
+        continue;
+      }
+      firstAction();
+      attemptedAttendees.add(nextAttendee);
+      try {
+        if (!await browser.selectAttendee(view, nextAttendee, clickTimeout)) {
+          return finish('attendee_selection_unconfirmed');
+        }
+      } catch {
+        return finish('attendee_selection_unconfirmed');
+      }
+      record('attendee_selection_attempted');
+      continue;
+    }
     if (!canClick(view, config)) {
       await sleep(entered || untilSale > -1_000 ? fastPollMs : pollMs);
       continue;
@@ -174,7 +228,7 @@ export async function runCheckout(browser, config, {
     const latest = await readCurrent();
     const latestProblem = preflight(latest, config);
     if (latestProblem) return finish(latestProblem.status, latestProblem.field);
-    if (latest.name !== 'checkout' || !canClick(latest, config) ||
+    if (latest.name !== 'checkout' || attendeePlan(latest, config).missing.length || !canClick(latest, config) ||
         now() < sale || now() >= entryDeadline) return finish('page_changed_before_submit');
 
     firstAction();
@@ -230,5 +284,6 @@ export async function runCheckout(browser, config, {
     }
     return finish('order_status_unknown');
   }
+  if (attemptedAttendees.size) return finish('attendee_selection_or_submit_not_ready');
   return finish(entered ? 'checkout_transition_timeout' : 'sale_window_elapsed');
 }

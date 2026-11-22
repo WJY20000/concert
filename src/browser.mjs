@@ -1,8 +1,8 @@
 import { matchesRoute, normalize } from './config.mjs';
 
 // A single DOM read captures the button state and all visible evidence together.
-async function inspect(page, { selectors = {}, blockers, rows }) {
-  return page.evaluate(({ selectors, blockers, rows }) => {
+async function inspect(page, { selectors = {}, blockers, rows, selection, buttonLabels }) {
+  return page.evaluate(({ selectors, blockers, rows, selection, buttonLabels }) => {
     function visible(element) {
       if (!element.getClientRects().length) return false;
       if (element.checkVisibility) return element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
@@ -20,7 +20,10 @@ async function inspect(page, { selectors = {}, blockers, rows }) {
 
     function snapshot(root, entries) {
       return Object.fromEntries(Object.entries(entries).map(([key, selector]) => {
-        const elements = find(root, selector);
+        let elements = find(root, selector);
+        if (key === 'button' && elements.length > 1 && buttonLabels) {
+          elements = elements.filter(element => buttonLabels.includes((read(element) ?? '').replace(/\s+/gu, ' ').trim()));
+        }
         const element = elements.length === 1 ? elements[0] : null;
         return [key, {
           count: elements.length,
@@ -31,13 +34,33 @@ async function inspect(page, { selectors = {}, blockers, rows }) {
       }));
     }
 
+    const sections = selection ? find(document, selection.section) : [];
+    const attendees = sections.length === 1 ? {
+      required: snapshot(sections[0], { count: selection.requiredCount }).count.text,
+      rows: find(sections[0], selection.rows).map(row => {
+        const values = snapshot(row, { name: selection.name, control: selection.control });
+        return {
+          name: values.name.text,
+          actionable: values.control.count === 1 && values.control.enabled,
+          checked: row.matches(selection.checked) || row.querySelector(selection.checked) !== null,
+        };
+      }),
+    } : null;
     return {
+      attendees,
       url: location.href,
       blocked: blockers.some(selector => find(document, selector).length > 0),
       values: snapshot(document, selectors),
       rows: rows ? find(document, rows.root).map(row => snapshot(row, rows.selectors)) : [],
     };
-  }, { selectors, blockers, rows });
+  }, { selectors, blockers, rows, selection, buttonLabels });
+}
+
+function exactText(label) {
+  const escaped = label.split(' ')
+    .map(token => token.replace(/[-[\]/{}()*+?.\\^$|]/gu, '\\$&'))
+    .join('\\s+');
+  return new RegExp(`^\\s*${escaped}\\s*$`, 'u');
 }
 
 export function createBrowser(page, config) {
@@ -77,6 +100,8 @@ export function createBrowser(page, config) {
     const result = await inspect(target, {
       selectors,
       blockers: config.blockers,
+      selection: name === 'checkout' ? stage.attendeeSelection : undefined,
+      buttonLabels: stage.buttonTexts && [...stage.buttonTexts, ...(stage.soldOutButtonTexts ?? [])].map(normalize),
       rows: name === 'orders' ? {
         root: stage.rows,
         selectors: { id: stage.id, ...(stage.link ? { link: stage.link } : {}) },
@@ -106,12 +131,22 @@ export function createBrowser(page, config) {
     async click(view, timeout) {
       if (view.target !== active || active.url() !== view.url) return false;
       // Retain the observed label in the locator while Playwright waits for actionability.
-      const label = normalize(view.values.button.text);
-      const escaped = label.split(' ')
-        .map(token => token.replace(/[-[\]/{}()*+?.\\^$|]/gu, '\\$&'))
-        .join('\\s+');
       await view.target.locator(`css=${config[view.name].button}`)
-        .filter({ visible: true, hasText: new RegExp(`^\\s*${escaped}\\s*$`, 'u') })
+        .filter({ visible: true, hasText: exactText(normalize(view.values.button.text)) })
+        .click({ timeout, noWaitAfter: true });
+      return true;
+    },
+
+    async selectAttendee(view, name, timeout) {
+      if (view.target !== active || active.url() !== view.url) return false;
+      const selection = config.checkout.attendeeSelection;
+      const named = active.locator(`css=${selection.name}`).filter({ visible: true, hasText: exactText(name) });
+      const row = active.locator(`css=${selection.section}`).filter({ visible: true })
+        .locator(`css=${selection.rows}`).filter({ visible: true, has: named });
+      const checked = active.locator(`css=${selection.checked}`);
+      const uncheckedRow = row.and(active.locator(`css=:not(:is(${selection.checked}))`))
+        .filter({ hasNot: checked });
+      await uncheckedRow.locator(`css=${selection.control}`).filter({ visible: true })
         .click({ timeout, noWaitAfter: true });
       return true;
     },
