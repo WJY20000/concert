@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { normalize } from './config.mjs';
+import { buttonLabels, normalize, startStages } from './config.mjs';
 
 function shown(view, key) {
   return view.values[key]?.count === 1;
@@ -32,7 +32,7 @@ function isSoldOut(view, config) {
 
 function canClick(view, config) {
   return view.values.button?.enabled &&
-    config[view.name].buttonTexts.some(label => normalize(label) === text(view, 'button'));
+    buttonLabels(config, view.name).includes(text(view, 'button'));
 }
 
 function attendeePlan(view, config) {
@@ -126,10 +126,12 @@ export async function runCheckout(browser, config, {
     }
   }
 
-  record('scheduled', { saleAt: timestamps.saleAt, mode });
+  const startingStages = startStages(config);
+  record('scheduled', { saleAt: timestamps.saleAt, mode, routeMode: config.routeMode ?? 0 });
   const initial = await readCurrent();
   const problem = preflight(initial, config);
   if (problem) return finish(problem.status, problem.field);
+  if (!startingStages.includes(initial.name)) return finish('wrong_start_stage');
   const verifiedFields = Object.entries(config.fields).filter(([key, field]) =>
     field[initial.name] && !(key === 'attendees' && initial.name === 'checkout' && config.checkout.attendeeSelection)).length;
   const buttonCount = initial.values.button?.count ?? 0;
@@ -171,6 +173,8 @@ export async function runCheckout(browser, config, {
       }
       return finish(currentProblem.status, currentProblem.field);
     }
+
+    if (!entered && !startingStages.includes(view.name)) return finish('wrong_start_stage');
 
     const untilSale = sale - now();
     if (untilSale > 0) {

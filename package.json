@@ -6,7 +6,8 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node src/cli.mjs",
-    "test": "node --test test/checkout.test.mjs"
+    "test": "node --test test/checkout.test.mjs",
+    "test:routes": "node --test --test-name-pattern=^route- test/checkout.test.mjs"
   },
   "dependencies": {
     "playwright": "1.65.1"

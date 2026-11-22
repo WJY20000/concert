@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { createBrowser } from './browser.mjs';
-import { matchesRoute, validate } from './config.mjs';
+import { matchesRoute, startStages, validate } from './config.mjs';
 import { reserveSubmission } from './journal.mjs';
 import { runCheckout } from './run.mjs';
 
@@ -25,9 +25,9 @@ async function main() {
   try {
     connection = await chromium.connectOverCDP(config.cdp, { timeout: 5_000 });
     const candidates = connection.contexts().flatMap(context => context.pages()).filter(page =>
-      ['detail', 'checkout'].some(name => matchesRoute(page.url(), config.origin, config[name]?.route)));
+      startStages(config).some(name => matchesRoute(page.url(), config.origin, config[name]?.route)));
     if (candidates.length !== 1) {
-      console.error('Expected one tab matching the configured detail or checkout route.');
+      console.error('Expected one open tab matching the selected routeMode.');
       return 2;
     }
     browser = createBrowser(candidates[0], config);

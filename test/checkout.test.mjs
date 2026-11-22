@@ -27,6 +27,9 @@ after(async () => {
 test('example config parses and remote debugging stays local', async () => {
   const config = JSON.parse(await readFile(new URL('../config.example.json', import.meta.url), 'utf8'));
   assert.equal(validate(config), config);
+  assert.throws(() => validate({ ...config, routeMode: 4 }));
+  assert.throws(() => validate({ ...config, routeMode: 2, detail: undefined }));
+  assert.throws(() => validate({ ...config, routeMode: 2, detail: { ...config.detail, buttonTexts: ['立即预订'] } }));
   assert.throws(() => validate({ ...config, cdp: 'http://example.com:9222' }));
   assert.throws(() => validate({ ...config, saleAt: '2027-01-01T10:00:00Z' }));
   assert.throws(() => validate({ ...config, order: { ...config.order, route: { origin, path: '/read' } } }));
@@ -100,13 +103,18 @@ async function runScenario(t, scenario = {}) {
     }
     switch (url.pathname) {
       case '/detail':
+        if (scenario.bothEntries) {
+          return html(user + display({ event: fields.event }) +
+            '<a href="/checkout?entered=1&via=standard">立即预订</a>' +
+            '<a href="/checkout?entered=1&via=qr">不，立即购票</a></main>');
+        }
         return html(user + display({ event: fields.event }) +
           (scenario.webEntry ? '<a href="/bad">扫码购票</a><a href="/checkout?entered=1">不，立即购票</a></main>' :
             `<button id="action" onclick="location.href='/checkout?entered=1'">Open checkout</button></main>`));
       case '/checkout': {
         if (url.searchParams.has('entered')) {
           entries += 1;
-          timeline.push({ event: 'fixture_entry', at: new Date().toISOString() });
+          timeline.push({ event: 'fixture_entry', at: new Date().toISOString(), via: url.searchParams.get('via') });
         }
         const values = { ...fields, ...(scenario.values ?? {}) };
         if (scenario.missing) delete values[scenario.missing];
@@ -174,6 +182,11 @@ async function runScenario(t, scenario = {}) {
 
   saleAt = Date.now() + (scenario.checkPreSale ? 1_600 : 300);
   const config = fixtureConfig(saleAt);
+  if (scenario.routeMode !== undefined) config.routeMode = scenario.routeMode;
+  if (scenario.bothEntries) {
+    config.detail.button = 'a';
+    config.detail.buttonTexts = ['不，立即购票', '立即预订'];
+  }
   if (scenario.webEntry) {
     config.detail.button = 'a';
     config.detail.buttonTexts = ['不，立即购票'];
@@ -352,5 +365,27 @@ for (const [setup, status] of [
     assert.equal((await scenario.run()).status, status);
     assert.equal(scenario.timeline.filter(event => event.event === 'attendee_selection_attempted').length, 0);
     assert.equal(scenario.counts().submissions, 0);
+  });
+}
+
+for (const [routeMode, expectedEntry] of [[1, null], [2, 'qr'], [3, 'standard']]) {
+  test(`route-${routeMode} creates one matching pending order via its selected entry`, async t => {
+    const scenario = await runScenario(t, {
+      routeMode, detail: routeMode !== 1, bothEntries: true, selectViewers: true,
+    });
+    const result = await scenario.run();
+    assert.equal(result.status, 'pending_payment');
+    const entry = scenario.timeline.find(event => event.event === 'fixture_entry');
+    assert.equal(entry?.via ?? null, expectedEntry);
+    assert.deepEqual(scenario.counts(), { entries: expectedEntry ? 1 : 0, submissions: 1, early: 0 });
+    t.diagnostic(`Simulated sale-to-pending: ${result.saleToPendingMs} ms`);
+  });
+}
+
+for (const [routeMode, detail] of [[1, true], [2, false], [3, false]]) {
+  test(`route-${routeMode} rejects the wrong starting page`, async t => {
+    const scenario = await runScenario(t, { routeMode, detail, bothEntries: true });
+    assert.equal((await scenario.run()).status, 'wrong_start_stage');
+    assert.deepEqual(scenario.counts(), { entries: 0, submissions: 0, early: 0 });
   });
 }

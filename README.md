@@ -20,6 +20,23 @@ Linux 如果缺少 Chromium 系统依赖，可用 `npx playwright install --with
 
 演练使用离线浏览器上下文和虚构域名 `fixture.invalid`，所有请求都由测试进程模拟。运行结果会写入 `test-artifacts/`。GitHub Actions 在推送时运行，也支持手动触发，测试失败会上传测试输出和模拟时间线。
 
+## 选择链路
+
+在 `config.local.json` 的顶层填写 `"routeMode": 2` 即可选择截图中的二维码网页入口，其他编号见下表。
+
+| `routeMode` | 从哪页启动 | 到开售后 |
+| --- | --- | --- |
+| `1` | 已打开的确认订单页 | 核验预填，按配置勾选观演人，然后提交 |
+| `2` | 有二维码提示的演出详情页 | 只点击「不，立即购票」，随后核验、勾选和提交 |
+| `3` | 有常规购买按钮的演出详情页 | 只点击预先配置的常规入口，例如「立即预订」，随后核验、勾选和提交 |
+| `0` 或省略 | 详情页或确认页 | 按配置匹配当前标签页和按钮，兼容现有配置 |
+
+显式模式只接管匹配的起始页。三条链路共用同一套订单核验和防重复提交逻辑。比较时应保持同一演出和 `intentKey`，每次只运行一条链路。先运行 `npm run test:routes` 可离线比较三条链路的 `saleToPendingMs`，也可执行以下命令单测链路 2。
+
+```bash
+node --test --test-name-pattern="^route-2" test/checkout.test.mjs
+```
+
 ## 本机配置
 
 1. 根据 `config.example.json` 建立 `config.local.json`。示例里的 URL、CSS 选择器和字段值仅用于演示配置结构。用浏览器开发者工具核对实际演出页面后替换它们。

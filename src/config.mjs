@@ -39,7 +39,24 @@ export function matchesRoute(value, origin, route) {
       url.searchParams.getAll(key).length === 1 && url.searchParams.get(key) === expected);
 }
 
+export function startStages(config) {
+  if (config.routeMode === 1) return ['checkout'];
+  if (config.routeMode === 2 || config.routeMode === 3) return ['detail'];
+  return ['checkout', 'detail'];
+}
+
+export function buttonLabels(config, stage) {
+  const labels = config[stage]?.buttonTexts ?? [];
+  if (stage !== 'detail' || ![2, 3].includes(config.routeMode)) return labels.map(normalize);
+  return labels.map(normalize).filter(label => {
+    const qrEntry = /^不[,，]\s*立即购票$/u.test(label);
+    return config.routeMode === 2 ? qrEntry : !qrEntry;
+  });
+}
+
 export function validate(config) {
+  check(config.routeMode === undefined || [0, 1, 2, 3].includes(config.routeMode), 'routeMode');
+  check(![2, 3].includes(config.routeMode) || config.detail, 'detail required for this routeMode');
   check(isDamaiOrigin(config.origin), 'origin');
   const cdp = new URL(config.cdp);
   check(cdp.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(cdp.hostname) &&
@@ -64,6 +81,9 @@ export function validate(config) {
       check(stage.soldOutButtonTexts === undefined || (Array.isArray(stage.soldOutButtonTexts) &&
         stage.soldOutButtonTexts.every(nonempty)), `${name}.soldOutButtonTexts`);
     }
+  }
+  if ([2, 3].includes(config.routeMode)) {
+    check(buttonLabels(config, 'detail').length > 0, 'detail.buttonTexts for selected routeMode');
   }
   check(nonempty(config.order.id) && nonempty(config.order.pending), 'order');
   check(nonempty(config.orders.rows) && nonempty(config.orders.id) && nonempty(config.orders.empty), 'orders');

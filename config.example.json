@@ -1,6 +1,7 @@
 {
   "origin": "https://detail.damai.cn",
   "cdp": "http://127.0.0.1:9222",
+  "routeMode": 0,
   "intentKey": "event-123-session-1",
   "saleAt": "2027-01-01T10:00:00+08:00",
   "blockers": [".your-captcha-dialog", ".your-login-dialog"],

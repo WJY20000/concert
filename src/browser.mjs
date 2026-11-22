@@ -1,4 +1,4 @@
-import { matchesRoute, normalize } from './config.mjs';
+import { buttonLabels, matchesRoute, normalize } from './config.mjs';
 
 // A single DOM read captures the button state and all visible evidence together.
 async function inspect(page, { selectors = {}, blockers, rows, selection, buttonLabels }) {
@@ -101,7 +101,7 @@ export function createBrowser(page, config) {
       selectors,
       blockers: config.blockers,
       selection: name === 'checkout' ? stage.attendeeSelection : undefined,
-      buttonLabels: stage.buttonTexts && [...stage.buttonTexts, ...(stage.soldOutButtonTexts ?? [])].map(normalize),
+      buttonLabels: [...buttonLabels(config, name), ...(stage.soldOutButtonTexts ?? []).map(normalize)],
       rows: name === 'orders' ? {
         root: stage.rows,
         selectors: { id: stage.id, ...(stage.link ? { link: stage.link } : {}) },
