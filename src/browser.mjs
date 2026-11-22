@@ -42,6 +42,8 @@ async function inspect(page, { selectors = {}, blockers, rows }) {
 
 export function createBrowser(page, config) {
   const context = page.context();
+  const trustedOrigins = new Set(['order', 'checkout', 'detail', 'orders'].map(name =>
+    config[name]?.route.origin ?? config.origin));
   let active = page;
   let lookup;
   let detailLookup;
@@ -94,12 +96,11 @@ export function createBrowser(page, config) {
           }
         }
       }
-      const trustedOrigins = ['order', 'checkout', 'detail', 'orders'].map(name =>
-        config[name]?.route.origin ?? config.origin);
-      if (trustedOrigins.includes(new URL(active.url()).origin)) {
+      const url = new URL(active.url());
+      if (trustedOrigins.has(url.origin)) {
         return { ...(await inspect(active, { blockers: config.blockers })), name: null };
       }
-      return null;
+      return url.protocol === 'https:' ? { name: 'external', values: {} } : null;
     },
 
     async click(view, timeout) {
@@ -109,14 +110,18 @@ export function createBrowser(page, config) {
       const escaped = label.split(' ')
         .map(token => token.replace(/[-[\]/{}()*+?.\\^$|]/gu, '\\$&'))
         .join('\\s+');
-      await active.locator(`css=${config[view.name].button}`)
+      await view.target.locator(`css=${config[view.name].button}`)
         .filter({ visible: true, hasText: new RegExp(`^\\s*${escaped}\\s*$`, 'u') })
-        .click({ timeout });
+        .click({ timeout, noWaitAfter: true });
       return true;
     },
 
     async listOrders(timeout) {
-      lookup ??= await context.newPage();
+      if (!lookup) {
+        lookup = await context.newPage();
+        // Keep the waiting tab foreground so Chromium doesn't throttle its countdown timers.
+        await active.bringToFront();
+      }
       await lookup.goto(config.orders.url, { waitUntil: 'domcontentloaded', timeout });
       await waitForPage(lookup, config.orders.ready, timeout);
       const view = await snapshot('orders', lookup);

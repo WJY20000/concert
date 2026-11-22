@@ -64,6 +64,7 @@ export async function runCheckout(browser, config, {
   pollMs = 150,
 } = {}) {
   const sale = Date.parse(config.saleAt);
+  const fastPollMs = Math.min(pollMs, 50);
   const timestamps = { saleAt: new Date(sale).toISOString() };
   function record(event, data = {}) {
     const at = new Date(now()).toISOString();
@@ -118,10 +119,11 @@ export async function runCheckout(browser, config, {
   let entered = false;
   let entryDeadline = sale + entryWindow;
   while (now() < entryDeadline) {
+    const readStartedAt = now();
     const view = await readCurrent();
     if (view?.blocked) return finish('challenge_or_login');
     if (entered && view?.name !== 'checkout') {
-      await sleep(pollMs);
+      await sleep(fastPollMs);
       continue;
     }
 
@@ -135,8 +137,15 @@ export async function runCheckout(browser, config, {
     }
 
     const untilSale = sale - now();
-    if (untilSale > 0 || !canClick(view, config) || now() >= entryDeadline) {
-      await sleep(untilSale > 0 ? Math.min(untilSale, untilSale > 5_000 ? 1_000 : pollMs) : pollMs);
+    if (untilSale > 0) {
+      const interval = untilSale > 5_000 ? 1_000 : untilSale > 500 ? pollMs : fastPollMs;
+      await sleep(Math.min(untilSale, interval));
+      continue;
+    }
+    if (readStartedAt < sale) continue;
+    if (now() >= entryDeadline) break;
+    if (!canClick(view, config)) {
+      await sleep(entered || untilSale > -1_000 ? fastPollMs : pollMs);
       continue;
     }
 
@@ -178,19 +187,26 @@ export async function runCheckout(browser, config, {
     }
 
     // From this point forward every action is read-only, including after a timeout.
-    const directDeadline = now() + transitionTimeout;
+    const directStartedAt = now();
+    const directDeadline = directStartedAt + transitionTimeout;
+    let reconcileReason = 'confirmation_timeout';
     while (now() < directDeadline) {
       const current = await readCurrent();
       if (current?.blocked) return finish('challenge_or_login');
       if (verifiedOrder(current, config, baseline)) return confirmed('checkout');
+      if (current?.name === 'external') {
+        reconcileReason = 'left_checkout_origin';
+        break;
+      }
       if (current?.name === 'checkout' && isSoldOut(current, config)) {
+        reconcileReason = 'sold_out_after_submit';
         record('sold_out_after_submit');
         break;
       }
-      await sleep(pollMs);
+      await sleep(now() - directStartedAt < 1_000 ? fastPollMs : pollMs);
     }
 
-    record('reconciliation_started');
+    record('reconciliation_started', { reason: reconcileReason });
     const deadline = now() + reconcileWindow;
     while (now() < deadline) {
       const current = await readCurrent();

@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { createBrowser } from '../src/browser.mjs';
 import { validate } from '../src/config.mjs';
@@ -10,6 +11,7 @@ import { reserveSubmission } from '../src/journal.mjs';
 import { runCheckout } from '../src/run.mjs';
 
 const origin = 'https://fixture.invalid';
+const mockPayment = 'https://payment.fixture.invalid/';
 const artifacts = new URL('../test-artifacts/', import.meta.url);
 const fields = { event: 'Demo show', session: 'Evening', ticket: 'Tier A', quantity: '2', attendees: 'Demo guests' };
 let chromiumInstance;
@@ -88,6 +90,9 @@ async function runScenario(t, scenario = {}) {
   await context.route('**/*', async route => {
     const request = route.request();
     const url = new URL(request.url());
+    if (scenario.paymentRedirect && url.href === mockPayment) {
+      return route.fulfill({ contentType: 'text/html', body: '<p>Mock payment destination</p>' });
+    }
     if (url.origin !== origin) return route.abort();
     function html(body) {
       return route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<!doctype html>' + body });
@@ -121,7 +126,7 @@ async function runScenario(t, scenario = {}) {
           `<script>
           document.querySelector('#action').onclick = async () => {
             const response = await fetch('/submit', { method: 'POST' });
-            if (response.ok) location.assign('/order?id=mock-new');
+            if (response.ok) location.assign(${JSON.stringify(scenario.paymentRedirect ? mockPayment : '/order?id=mock-new')});
           };
           </script></main>`);
       }
@@ -159,11 +164,25 @@ async function runScenario(t, scenario = {}) {
   const config = fixtureConfig(saleAt);
   await page.goto(origin + (scenario.detail ? '/detail' : '/checkout'));
   const browser = createBrowser(page, config);
+  if (scenario.staleReadAtSale) {
+    const current = browser.current;
+    let crossed = false;
+    browser.current = async () => {
+      const view = await current();
+      if (!crossed && timeline.some(event => event.event === 'orders_baseline_loaded')) {
+        crossed = true;
+        timeline.push({ event: 'fixture_stale_read', at: new Date().toISOString() });
+        await page.locator('#event').evaluate(element => { element.textContent = 'Different show'; });
+        await sleep(Math.max(0, saleAt - Date.now() + 5));
+      }
+      return view;
+    };
+  }
   const settings = {
     reserveSubmission: () => reserveSubmission(directory, 'same-intent'),
     emit: event => timeline.push(event),
     entryWindow: 4_000,
-    transitionTimeout: 900,
+    transitionTimeout: scenario.paymentRedirect ? 8_000 : 900,
     reconcileWindow: 1_200,
     lookupTimeout: 1_000,
     pollMs: 35,
@@ -232,6 +251,25 @@ test('an enabled div with a presale label waits until the actual submit label ap
   const result = await scenario.run();
   assert.equal(result.status, 'pending_payment');
   assert.ok(Date.parse(result.submitAttemptAt) >= scenario.saleAt + 250);
+  assert.deepEqual(scenario.counts(), { entries: 0, submissions: 1, early: 0 });
+});
+
+test('a detail snapshot captured before sale cannot authorize entry after the sale boundary', async t => {
+  const scenario = await runScenario(t, { detail: true, checkPreSale: true, staleReadAtSale: true });
+  const result = await scenario.run();
+  assert.equal(result.status, 'prefill_mismatch');
+  assert.equal(result.field, 'event');
+  const staleRead = scenario.timeline.find(event => event.event === 'fixture_stale_read');
+  assert.ok(Date.parse(staleRead.at) < scenario.saleAt);
+  assert.deepEqual(scenario.counts(), { entries: 0, submissions: 0, early: 0 });
+});
+
+test('external payment navigation immediately switches to read-only order verification', async t => {
+  const scenario = await runScenario(t, { paymentRedirect: true });
+  const result = await scenario.run();
+  assert.equal(result.status, 'pending_payment');
+  assert.equal(scenario.timeline.find(event => event.event === 'reconciliation_started')?.reason, 'left_checkout_origin');
+  assert.equal(scenario.timeline.find(event => event.event === 'order_confirmed')?.source, 'order_list');
   assert.deepEqual(scenario.counts(), { entries: 0, submissions: 1, early: 0 });
 });
 
