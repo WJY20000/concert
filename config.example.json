@@ -8,13 +8,15 @@
     }
   },
   "intent": {
-    "event": "12/04｜VICETONE 2026中国巡演 [V神] @南京MEHUAN",
-    "session": "周六 19:30",
-    "tier": "看台 A",
-    "quantity": 2,
-    "seats": ["A区3排12座", "A区3排13座"],
-    "attendees": ["演示甲", "演示乙"],
-    "saleAt": null,
+    "event": "【南京】 12/04 | VICETONE 2026中国巡演 [V神] @南京MEHUAN",
+    "session": "2026-12-04 周五 22:00",
+    "tier": "早鸟票88元",
+    "quantity": 1,
+    "seats": [],
+    "attendees": [
+      "填写大麦已保存的观演人姓名"
+    ],
+    "saleAt": "2026-11-26T19:00:00+08:00",
     "pendingStatus": "待支付"
   }
 }

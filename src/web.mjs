@@ -86,12 +86,16 @@ function inspectDocument({ profile, candidates, url, prior, key, arm }) {
   view.stage = ready[0];
   const stage = profile.stages[view.stage];
   view.loggedIn = find(document, stage.login).length === 1;
+  const damaiOptions = /(^|\.)damai\.cn$/u.test(location.hostname) &&
+    ['detail', 'options'].includes(view.stage);
+  const optionText = (name, value) => damaiOptions && ['session', 'tier'].includes(name)
+    ? value.replace(/\s*可预约$/u, '') : value;
   for (const [name, field] of Object.entries(stage.fields ?? {})) {
     const css = typeof field === 'string' ? field : field.selector;
     const nodes = find(document, css);
     const read = typeof field === 'string' ? text : node => normalize(node.getAttribute(field.attribute));
     if (name === 'seats' || name === 'attendees') view.fields[name] = nodes.map(read);
-    else if (nodes.length === 1) view.fields[name] = read(nodes[0]);
+    else if (nodes.length === 1) view.fields[name] = optionText(name, read(nodes[0]));
   }
 
   const targets = new Map();
@@ -113,7 +117,8 @@ function inspectDocument({ profile, candidates, url, prior, key, arm }) {
     for (const row of find(document, choice.rows)) {
       const names = find(row, choice.label);
       if (names.length !== 1) continue;
-      const label = choice.labelAttribute ? normalize(names[0].getAttribute(choice.labelAttribute)) : text(names[0]);
+      const raw = choice.labelAttribute ? normalize(names[0].getAttribute(choice.labelAttribute)) : text(names[0]);
+      const label = optionText(type, raw);
       if (!label) continue;
       const selected = row.matches(choice.selected) || Boolean(row.querySelector(choice.selected));
       const controls = find(row, choice.control);

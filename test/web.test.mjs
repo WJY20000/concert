@@ -332,3 +332,25 @@ test('after an external redirect the runner uses the configured read-only order 
   assert.equal(result.status, 'pending_payment');
   assert.equal(reads, 1);
 });
+
+test('Damai detail strips the reservation badge from seatless tier and session names', async t => {
+  const detailHtml = '<main><span class="account">已登录</span><h1 class="title">演示演出</h1>' +
+    '<p id="session">2026-12-04 周五 22:00 <span>可预约</span></p>' +
+    '<button class="tier chosen">早鸟票88元 <span>可预约</span></button>' +
+    '<button class="tier">预售票138元 <span>可预约</span></button>' +
+    '<a href="/reserve">预约抢票</a></main>';
+  const { page } = await fixture(t, { start: detailUrl, detailHtml });
+  const local = structuredClone(profile);
+  const stage = local.stages.detail;
+  stage.fields.session = '#session';
+  stage.fields.tier = '.chosen';
+  stage.choices = { tier: { rows: '.tier', label: ':scope', control: ':scope', selected: '.chosen' } };
+  const adapter = attachWebPage(page, local);
+  t.after(() => adapter.close());
+  const view = await adapter.snapshot();
+  assert.equal(view.fields.session, '2026-12-04 周五 22:00');
+  assert.equal(view.fields.tier, '早鸟票88元');
+  assert.equal(view.controls['tier:早鸟票88元'].selected, true);
+  assert.equal(view.controls['tier:预售票138元'].selected, false);
+  assert.equal(view.controls.enter, undefined);
+});

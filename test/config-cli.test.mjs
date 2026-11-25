@@ -22,6 +22,7 @@ async function temporaryConfig(t) {
     test_provider: { web: 'second.json', android: 'device.json' },
   };
   config.provider = 'primary';
+  config.intent.saleAt = null;
   const filename = join(directory, 'config.local.json');
   await Promise.all([
     writeFile(join(directory, 'web.json'), '{"tag":"first"}'),
@@ -32,10 +33,14 @@ async function temporaryConfig(t) {
   return { directory, filename, config };
 }
 
-test('sample permits read-only observation before sale time has been set', async () => {
+test('sample targets the Nanjing show and ¥88 tier, and read-only config can omit sale time', async t => {
   const loaded = await loadConfig(sample);
-  assert.equal(loaded.intent.saleAt, null);
-  assert.ok(loaded.profile.stages.checkout);
+  assert.equal(loaded.intent.saleAt, '2026-11-26T19:00:00+08:00');
+  assert.equal(loaded.intent.session, '2026-12-04 周五 22:00');
+  assert.equal(loaded.intent.tier, '早鸟票88元');
+  assert.deepEqual(loaded.intent.seats, []);
+  assert.equal(loaded.profile.stages.detail.query.id, '1102631725191');
+  assert.equal((await loadConfig((await temporaryConfig(t)).filename)).intent.saleAt, null);
 });
 
 test('explicit provider and platform load the matching profile relative to the configuration file', async t => {
