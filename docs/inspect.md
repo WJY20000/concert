@@ -11,6 +11,9 @@ node src/inspect.mjs config.local.json --provider damai --platform android
 
 ### 网页
 
+如果启动日志是 `connected` 后接 `page_unrecognized`，在检查器里输入 `:mapping`。它会列出当前 URL 对得上的阶段，以及每个阶段的 `ready` 和 `login` 分别命中了几个可见元素。正常打开详情页时，`detail.ready` 应为 1，其他候选阶段的 `ready` 应为 0。若 `detail.ready` 是 0 或大于 1，请按实际页面更新 `stages.detail.ready`。如果多个阶段同时命中，请修正这几个阶段的标记，让它们在各自的页面状态中互斥。
+
+
 在浏览器开发者工具中选中页面元素，检查采用稳定类名或属性的候选 CSS，再把它逐行粘贴到检查器。例如，一个确实使用了原生复选框的确认页可以查询：
 
 ```css

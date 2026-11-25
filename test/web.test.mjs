@@ -354,3 +354,19 @@ test('Damai detail strips the reservation badge from seatless tier and session n
   assert.equal(view.controls['tier:预售票138元'].selected, false);
   assert.equal(view.controls.enter, undefined);
 });
+
+test('web mapping diagnosis reports visible markers even when the stage is ambiguous', async t => {
+  const { page } = await fixture(t, { start: detailUrl });
+  const local = structuredClone(profile);
+  local.stages.options = { ...local.stages.detail, ready: '.sku-panel', login: '.account' };
+  const adapter = attachWebPage(page, local);
+  t.after(() => adapter.close());
+  assert.deepEqual(await adapter.inspectStages(), [
+    { stage: 'detail', ready: 1, login: 1 }, { stage: 'options', ready: 0, login: 1 },
+  ]);
+  await page.locator('main').evaluate(el => el.insertAdjacentHTML('beforeend', '<p class="sku-panel">已打开</p>'));
+  assert.equal((await adapter.snapshot()).stage, 'unknown');
+  assert.deepEqual(await adapter.inspectStages(), [
+    { stage: 'detail', ready: 1, login: 1 }, { stage: 'options', ready: 1, login: 1 },
+  ]);
+});

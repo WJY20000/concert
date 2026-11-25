@@ -68,9 +68,9 @@ function unknown() {
 }
 
 // Runs entirely within the page. Each poll requires one browser round trip.
-function inspectDocument({ profile, candidates, url, prior, key, arm }) {
+function inspectDocument({ profile, candidates, url, prior, key, arm, diagnose }) {
   const view = { stage: 'unknown', fields: {}, controls: {}, blocked: false, soldOut: false, loggedIn: false };
-  if (location.href !== url) return prior ? null : view;
+  if (location.href !== url) return prior || diagnose ? null : view;
   const normalize = value => String(value ?? '').replace(/\s+/gu, ' ').trim();
   const visible = element => element.getClientRects().length > 0 &&
     (typeof element.checkVisibility === 'function'
@@ -81,9 +81,15 @@ function inspectDocument({ profile, candidates, url, prior, key, arm }) {
     ? element.value : (element.innerText ?? element.textContent));
   view.blocked = profile.blockers.some(css => find(document, css).length > 0);
   view.soldOut = profile.soldOut.some(css => find(document, css).length > 0);
-  const ready = candidates.filter(name => find(document, profile.stages[name].ready).length === 1);
+  const markers = candidates.map(stage => ({ stage, ready: find(document, profile.stages[stage].ready).length }));
+  if (diagnose) {
+    return markers.map(marker => ({
+      ...marker, login: find(document, profile.stages[marker.stage].login).length,
+    }));
+  }
+  const ready = markers.filter(marker => marker.ready === 1);
   if (ready.length !== 1) return prior ? null : view;
-  view.stage = ready[0];
+  view.stage = ready[0].stage;
   const stage = profile.stages[view.stage];
   view.loggedIn = find(document, stage.login).length === 1;
   const damaiOptions = /(^|\.)damai\.cn$/u.test(location.hostname) &&
@@ -210,6 +216,14 @@ export function attachWebPage(page, profile, disconnect) {
       if (target !== active) return unknown();
       if (view.stage !== 'unknown') captures.set(view, { target, url: input.url, prior: structuredClone(view) });
       return view;
+    },
+
+    async inspectStages() {
+      const input = options(active);
+      if (!input?.candidates.length) return [];
+      const matches = await active.evaluate(inspectDocument, { ...input, diagnose: true });
+      if (!matches) throw new Error('web_stale_view');
+      return matches;
     },
 
     async inspectLocator(css) {

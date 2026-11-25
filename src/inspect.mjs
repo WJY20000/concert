@@ -28,6 +28,19 @@ export async function inspectLines(adapter, platform, lines, write) {
     const line = raw.trim();
     if (!line) continue;
     if (line === ':quit') break;
+    if (line === ':mapping') {
+      try {
+        if (platform !== 'web') throw new Error();
+        const matches = await adapter.inspectStages();
+        write({ stages: matches.filter(item => stages.includes(item.stage) &&
+          [item.ready, item.login].every(count => Number.isSafeInteger(count) && count >= 0))
+          .map(({ stage, ready, login }) => ({ stage, ready, login })) });
+      } catch {
+        write({ error: 'web_mapping_unavailable' });
+        success = false;
+      }
+      continue;
+    }
     if (line === ':status') {
       try {
         write(summary(await adapter.snapshot()));
@@ -95,7 +108,7 @@ async function main() {
     }
     if (process.stdin.isTTY) {
       const syntax = config.platform === 'web' ? 'CSS 选择器' : '单行 JSON 控件选择条件';
-      console.error('输入' + syntax + '并按回车。:status 查看当前配置的识别结果，:quit 结束。');
+      console.error('输入' + syntax + '并按回车。:status 查看识别结果，网页可用 :mapping 查看页面标记，:quit 结束。');
     }
     // Disable readline history so a name or subtree selector isn't retained as an input history entry.
     reader = createInterface({ input: process.stdin, terminal: false, crlfDelay: Infinity, historySize: 0 });
