@@ -107,8 +107,10 @@ function inspectDocument({ profile, candidates, url, prior, key, arm, diagnose }
   const targets = new Map();
   function register(id, element, label, selected) {
     const duplicate = Object.hasOwn(view.controls, id);
-    const enabled = !duplicate && Boolean(element) &&
-      !element.closest(':disabled,[aria-disabled=true],[inert]');
+    const disabledSelector = ':disabled,[aria-disabled=true],[inert]';
+    const damaiDisabledSelector = '.disabled,.buy_disabled,.notticket,.cafe-c-input-number-handler-disabled';
+    const enabled = !duplicate && Boolean(element) && !element.closest(disabledSelector) &&
+      !(damaiOptions && element.closest(damaiDisabledSelector));
     view.controls[id] = { enabled, selected, label };
     targets.set(id, enabled ? element : null);
   }

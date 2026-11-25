@@ -1,28 +1,28 @@
 {
   "cdp": "http://127.0.0.1:9222",
   "blockers": [".login-dialog", ".captcha-dialog", "iframe[title='安全验证']"],
-  "soldOut": [".selected-tier-sold-out", ".selected-seat-unavailable"],
+  "soldOut": [".selected-tier-sold-out", ".selected-seat-unavailable", ".perform__order__box .sku_item.active .notticket", ".perform .perform__soldout"],
   "stages": {
     "detail": {
       "origin": "https://detail.damai.cn",
       "path": "/item.htm",
       "query": {"id": "1102631725191"},
-      "ready": ".perform__order",
-      "login": ".login-user .name",
+      "ready": ".perform .order > .perform__order__box",
+      "login": ".user-header .J_userinfo_name .name-user:not(:empty)",
       "fields": {
-        "event": ".perform__title",
-        "session": ".session-options .selected .option-label",
-        "tier": ".tier-options .selected .option-label",
-        "quantity": "input.cafe-c-input-number-input"
+        "event": ".perform .order > .title > span:not(.tip)",
+        "session": ".perform__order__select__performs .select_right_list_item.active > span",
+        "tier": ".perform__order__box .sku_item.active > .skuname",
+        "quantity": ".perform__order__price .number .num, .perform__order__box input.cafe-c-input-number-input"
       },
       "choices": {
-        "session": {"rows": ".session-options .option", "label": ".option-label", "control": ":scope", "selected": ".selected, [aria-selected=true]"},
-        "tier": {"rows": ".tier-options .option", "label": ".option-label", "control": ":scope", "selected": ".selected, [aria-selected=true]"}
+        "session": {"rows": ".perform__order__select__performs .select_right_list_item", "label": ":scope > span", "control": ":scope", "selected": ".active, [aria-selected=true]"},
+        "tier": {"rows": ".perform__order__box .select_right_list_item.sku_item", "label": ".skuname", "control": ":scope", "selected": ".active, [aria-selected=true]"}
       },
       "actions": {
-        "enter": {"selector": ".buy-link, .buy__button__text, a.web-entry", "labels": ["不，立即购票", "不， 立即购票", "立即预订", "立即购买", "选座购买"]},
-        "increase": {"selector": ".quantity-plus, .cafe-c-input-number-handler-up", "labels": ["+"]},
-        "decrease": {"selector": ".quantity-minus, .cafe-c-input-number-handler-down", "labels": ["-", "−"]}
+        "enter": {"selector": ".perform__order__box .buybtn:not(.disabled, .cancelbtn), .perform .buy-link:not(.disabled), .perform .buy__button__text", "labels": ["不，立即购票", "不， 立即购票", "不，立即购买", "不，立即预订", "立即预订", "立即购买", "立即购票", "选座购买"]},
+        "increase": {"selector": ".perform__order__price .number .plus:not(.disabled), .perform__order__box .cafe-c-input-number-handler-up:not(.cafe-c-input-number-handler-disabled)", "labels": ["+", "＋"]},
+        "decrease": {"selector": ".perform__order__price .number .minus:not(.disabled), .perform__order__box .cafe-c-input-number-handler-down:not(.cafe-c-input-number-handler-disabled)", "labels": ["-", "−", "－"]}
       }
     },
     "options": {
@@ -30,9 +30,9 @@
       "path": "/item.htm",
       "query": {"id": "1102631725191"},
       "ready": ".sku-options-panel",
-      "login": ".login-user .name",
+      "login": ".user-header .J_userinfo_name .name-user:not(:empty)",
       "fields": {
-        "event": ".sku-options-panel .event-title",
+        "event": ".perform .order > .title > span:not(.tip)",
         "session": ".sku-options-panel .session-options .selected .option-label",
         "tier": ".sku-options-panel .tier-options .selected .option-label",
         "quantity": ".sku-options-panel .quantity-value"

@@ -370,3 +370,49 @@ test('web mapping diagnosis reports visible markers even when the stage is ambig
     { stage: 'detail', ready: 1, login: 1 }, { stage: 'options', ready: 1, login: 1 },
   ]);
 });
+
+test('the shipped Nanjing profile recognizes the presale page and its selected early-bird tier', async t => {
+  const { readFile } = await import('node:fs/promises');
+  const { runCheckout } = await import('../src/engine.mjs');
+  const load = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'));
+  const settings = await load('../profiles/web.json');
+  const { intent } = await load('../config.example.json');
+  const address = 'https://detail.damai.cn/item.htm?id=1102631725191';
+  const document = `<!doctype html>
+  <header class="user-header"><a class="J_userinfo_name"><span class="name-user">演示账号</span></a></header>
+  <div class="perform"><div class="order">
+    <div class="title"><span class="tip">总票代</span><span>${intent.event}</span></div>
+    <div class="perform__order__box">
+      <div class="perform__order__select__performs">
+        <div class="select_right_list_item active"><span>${intent.session} <span>可预约</span></span></div>
+      </div>
+      <div class="select_right_list_item sku_item active"><div class="skuname">早鸟票88元 <span>可预约</span></div></div>
+      <div class="select_right_list_item sku_item"><div class="skuname">预售票138元 <span>可预约</span></div></div>
+      <div class="buybtn disabled">预约抢票</div>
+    </div>
+  </div></div>`;
+  const context = await browser.newContext({ offline: true, serviceWorkers: 'block' });
+  t.after(() => context.close());
+  await context.route('**/*', route => route.request().url() === address
+    ? route.fulfill({ contentType: 'text/html; charset=utf-8', body: document }) : route.abort());
+  const page = await context.newPage();
+  await page.goto(address);
+  const adapter = attachWebPage(page, settings);
+  t.after(() => adapter.close());
+  const view = await adapter.snapshot();
+  assert.equal(view.stage, 'detail');
+  assert.equal(view.loggedIn, true);
+  assert.equal(view.fields.session, intent.session);
+  assert.equal(view.fields.tier, intent.tier);
+  assert.equal(view.controls['session:' + intent.session].selected, true);
+  assert.equal(view.controls['tier:早鸟票88元'].selected, true);
+  assert.equal(view.controls['tier:预售票138元'].selected, false);
+  assert.equal(view.controls.enter, undefined);
+  const existingConfig = { ...intent, event: intent.event.replace('】12', '】 12').replace('｜', ' | ') };
+  assert.equal((await runCheckout(adapter, existingConfig)).status, 'observed');
+
+  await page.locator('.buybtn').evaluate(el => { el.textContent = '立即购买'; });
+  assert.equal((await adapter.snapshot()).controls.enter, undefined);
+  await page.locator('.buybtn').evaluate(el => el.classList.remove('disabled'));
+  assert.equal((await adapter.snapshot()).controls.enter.enabled, true);
+});

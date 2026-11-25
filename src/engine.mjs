@@ -3,6 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 const purchaseStages = new Set(['detail', 'options', 'seats', 'checkout']);
 const submitLabels = new Set(['提交订单', '立即提交', '确认下单', '确认提交订单', '同意以上协议并提交订单', 'Create order']);
 const clean = value => typeof value === 'string' ? value.trim().replace(/\s+/gu, ' ') : '';
+const eventKey = value => clean(value).replace(/】 +/gu, '】').replace(/ *[|｜] */gu, '|');
 const count = value => {
   const digits = String(value ?? '').trim().match(/^(\d+)\s*张?$/u);
   return digits ? Number(digits[1]) : NaN;
@@ -15,7 +16,8 @@ function sameList(actual, expected) {
 }
 
 function matchesIntent(fields, intent) {
-  return ['event', 'session', 'tier'].every(key => clean(fields[key]) === intent[key]) &&
+  return eventKey(fields.event) === eventKey(intent.event) &&
+    ['session', 'tier'].every(key => clean(fields[key]) === intent[key]) &&
     count(fields.quantity) === intent.quantity && sameList(fields.attendees, intent.attendees) &&
     (!intent.seats.length || sameList(fields.seats, intent.seats));
 }
@@ -54,7 +56,7 @@ function nextStep(view, intent) {
   if (!purchaseStages.has(stage)) return { error: 'page_unrecognized' };
   if (!view.loggedIn) return { error: 'login_unverified' };
   if (!clean(fields.event)) return { error: 'selection_unavailable' };
-  if (clean(fields.event) !== intent.event) return { error: 'wrong_event' };
+  if (eventKey(fields.event) !== eventKey(intent.event)) return { error: 'wrong_event' };
 
   if (stage === 'checkout') {
     if (!clean(fields.session) || !clean(fields.tier) || !Number.isSafeInteger(count(fields.quantity)) ||
