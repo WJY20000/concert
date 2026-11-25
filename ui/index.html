@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Concert · 购票控制台</title>
+    <link rel="stylesheet" href="/ui.css">
+    <script type="module" src="/ui.js"></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <h1><span lang="en">Concert</span>购票控制台</h1>
+      <span class="status" id="connection" role="status">正在连接</span>
+    </header>
+    <main>
+      <section class="settings" aria-labelledby="settings-heading">
+        <h2 id="settings-heading">运行任务</h2>
+        <form id="controls">
+          <label for="provider">票务平台</label>
+          <select id="provider" disabled></select>
+          <label for="platform">购票端</label>
+          <select id="platform">
+            <option value="web">网页 · Chrome / Chromium</option>
+            <option value="android">安卓 · App</option>
+          </select>
+          <label for="mode">运行方式</label>
+          <select id="mode">
+            <option value="observe">只读检查</option>
+            <option value="rehearse">购票演练</option>
+            <option value="live">真实购票</option>
+          </select>
+          <p class="hint" id="mode-hint"></p>
+          <button class="primary" type="submit" id="start" disabled>开始只读检查</button>
+          <button class="secondary" type="button" id="stop" disabled>停止任务</button>
+        </form>
+        <p class="error" role="alert" id="error"></p>
+      </section>
+      <section class="results" aria-labelledby="result-heading">
+        <div class="section-top">
+          <h2 id="result-heading">任务状态</h2>
+          <output id="phase">空闲</output>
+        </div>
+        <div class="metric">
+          <span>开售到确认待支付</span>
+          <strong id="elapsed">—</strong>
+        </div>
+        <dl id="times">
+          <div><dt>预定开售</dt><dd id="saleAt">—</dd></div>
+          <div><dt>首次操作</dt><dd id="firstActionAt">—</dd></div>
+          <div><dt>提交尝试</dt><dd id="submitAttemptAt">—</dd></div>
+          <div><dt>确认订单</dt><dd id="confirmedAt">—</dd></div>
+        </dl>
+        <div class="section-top timeline-title">
+          <h2>操作时间线</h2><span>北京时间</span>
+        </div>
+        <p id="empty">任务启动后，这里会显示操作记录。</p>
+        <ol id="timeline" aria-label="最近操作，最新记录在前"></ol>
+      </section>
+    </main>
+  </body>
+</html>

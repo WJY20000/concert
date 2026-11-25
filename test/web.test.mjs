@@ -1,0 +1,334 @@
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+import { chromium } from 'playwright';
+import { attachWebPage } from '../src/web.mjs';
+
+const detailUrl = 'https://detail.damai.cn/item.htm?id=123';
+const checkoutUrl = 'https://buy.damai.cn/checkout';
+const profile = {
+  cdp: 'http://127.0.0.1:9222',
+  blockers: ['.captcha'],
+  soldOut: ['.sold-out'],
+  stages: {
+    detail: {
+      origin: 'https://detail.damai.cn',
+      path: '/item.htm',
+      query: { id: '123' },
+      ready: 'main',
+      login: '.account',
+      fields: { event: '.title' },
+      actions: { enter: { selector: 'a', labels: ['不，立即购票'] } },
+    },
+    checkout: {
+      origin: 'https://buy.damai.cn',
+      path: '/checkout',
+      ready: '.confirm',
+      login: '.account',
+      fields: { event: '.title', seats: '.selected-seat' },
+      choices: {
+        attendee: { rows: '.person', label: '.name', control: 'input', selected: 'input:checked' },
+      },
+      actions: { submit: { selector: 'button', labels: ['提交订单'] } },
+    },
+  },
+};
+
+let browser;
+before(async () => {
+  browser = await chromium.launch({ executablePath: process.env.TEST_CHROMIUM_PATH || undefined });
+});
+after(async () => { await browser?.close(); });
+
+const detail = `<main><span class="account">已登录</span><h1 class="title">演示演出</h1>
+<a href="/other">扫码购买</a><a href="${checkoutUrl}">不，立即购票</a></main>`;
+const checkout = `<main class="confirm"><span class="account">已登录</span><h1 class="title">演示演出</h1>
+<span class="selected-seat">A 排 7 号</span><span class="selected-seat">A 排 8 号</span>
+<label class="person"><span class="name">演示甲</span><input type="checkbox" checked></label>
+<label class="person"><span class="name">演示乙</span><input type="checkbox"></label>
+<button>确认支付</button><button>提交订单</button>
+<output id="click"></output>
+<script>document.addEventListener('click', event => {
+  if (event.target.tagName === 'BUTTON') document.getElementById('click').textContent = event.target.textContent;
+});</script></main>`;
+
+// Real browser actions are confined to intercepted fixture documents, including redirects and popups.
+async function fixture(t, { start = checkoutUrl, detailHtml = detail, checkoutHtml = checkout } = {}) {
+  const context = await browser.newContext({ offline: true, serviceWorkers: 'block' });
+  context.setDefaultTimeout(4000);
+  t.after(() => context.close());
+  await context.route('**/*', route => {
+    const u = new URL(route.request().url());
+    let body;
+    if (u.origin === profile.stages.detail.origin && u.pathname === profile.stages.detail.path) body = detailHtml;
+    if (u.href === checkoutUrl) body = checkoutHtml;
+    if (!body) return route.abort();
+    return route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<!doctype html>' + body });
+  });
+  const page = await context.newPage();
+  await page.goto(start);
+  const adapter = attachWebPage(page, profile);
+  return { adapter, page };
+}
+
+test('web selects the QR fallback and the exact attendee through DOM controls', async t => {
+  const { adapter, page } = await fixture(t, { start: detailUrl });
+  const entry = await adapter.snapshot();
+  assert.equal(entry.stage, 'detail');
+  assert.equal(entry.fields.event, '演示演出');
+  assert.equal(entry.loggedIn, true);
+  await adapter.click(entry, 'enter');
+  await page.waitForURL(checkoutUrl);
+
+  const view = await adapter.snapshot();
+  assert.equal(view.stage, 'checkout');
+  assert.deepEqual(view.fields.seats, ['A 排 7 号', 'A 排 8 号']);
+  assert.equal(view.controls['attendee:演示甲'].selected, true);
+  assert.equal(view.controls['attendee:演示乙'].selected, false);
+  await adapter.click(view, 'attendee:演示乙');
+  const selected = await adapter.snapshot();
+  assert.equal(selected.controls['attendee:演示甲'].selected, true);
+  assert.equal(selected.controls['attendee:演示乙'].selected, true);
+
+  await adapter.click(selected, 'submit');
+  assert.equal(await page.locator('#click').textContent(), '提交订单');
+});
+
+test('web refuses a previously observed submit action when event or button changes', async t => {
+  const { adapter, page } = await fixture(t);
+  const view = await adapter.snapshot();
+  await page.locator('.title').evaluate(element => { element.textContent = '另一场演出'; });
+  await assert.rejects(() => adapter.click(view, 'submit'));
+  const changed = await adapter.snapshot();
+  await page.getByRole('button', { name: '提交订单' }).evaluate(el => { el.textContent = '确认支付'; });
+  await assert.rejects(() => adapter.click(changed, 'submit'));
+  assert.equal(await page.locator('#click').textContent(), '');
+});
+
+test('web flags challenge and sold-out signals before a previously mapped click', async t => {
+  const { adapter, page } = await fixture(t);
+  for (const [selector, flag] of [['captcha', 'blocked'], ['sold-out', 'soldOut']]) {
+    const beforeSignal = await adapter.snapshot();
+    await page.evaluate(name => {
+      const message = document.createElement('p');
+      message.className = name;
+      message.textContent = '请核验页面';
+      document.body.append(message);
+    }, selector);
+    assert.equal((await adapter.snapshot())[flag], true);
+    await assert.rejects(() => adapter.click(beforeSignal, 'submit'));
+    assert.equal(await page.locator('#click').textContent(), '');
+    await page.locator('.' + selector).evaluate(el => el.remove());
+  }
+});
+
+test('web never acts on ambiguous names or an unrecognized event URL', async t => {
+  const { adapter, page } = await fixture(t);
+  await page.locator('.person').last().evaluate(el => el.after(el.cloneNode(true)));
+  const ambiguous = await adapter.snapshot();
+  await assert.rejects(() => adapter.click(ambiguous, 'attendee:演示乙'));
+  assert.equal(await page.locator('.person input:checked').count(), 1);
+  await page.goto('https://detail.damai.cn/item.htm?id=999');
+  const unknown = await adapter.snapshot();
+  assert.equal(unknown.stage, 'unknown');
+  await assert.rejects(() => adapter.click(unknown, 'enter'));
+});
+
+test('web follows a verified checkout popup opened by the selected detail page', async t => {
+  const { adapter, page } = await fixture(t, {
+    start: detailUrl,
+    detailHtml: detail.replace('href="' + checkoutUrl + '"', 'target="_blank" href="' + checkoutUrl + '"'),
+  });
+  const view = await adapter.snapshot();
+  const [popup] = await Promise.all([page.waitForEvent('popup'), adapter.click(view, 'enter')]);
+  await popup.waitForLoadState('domcontentloaded');
+  const next = await adapter.snapshot();
+  assert.equal(next.stage, 'checkout');
+  assert.equal(next.fields.event, '演示演出');
+});
+
+test('web avoids a button relabeled as payment during the actionability wait', async t => {
+  const { adapter, page } = await fixture(t);
+  await page.evaluate(() => {
+    const cover = document.createElement('div');
+    cover.id = 'cover';
+    cover.style.cssText = 'position:fixed;inset:0;z-index:99999;background:white';
+    document.body.append(cover);
+  });
+  const view = await adapter.snapshot();
+  await page.getByRole('button', { name: '提交订单' }).evaluate(button => {
+    setTimeout(() => {
+      button.textContent = '确认支付';
+      document.querySelector('#cover').remove();
+    }, 180);
+  });
+  await assert.rejects(() => adapter.click(view, 'submit'));
+  assert.equal(await page.locator('#click').textContent(), '');
+});
+
+test('live runner exercises web options, seat map, selected people and an offline pending order', async t => {
+  const { runCheckout } = await import('../src/engine.mjs');
+  const origin = 'https://detail.damai.cn';
+  const path = '/offline/full-flow';
+  const base = { origin, path, login: '.account' };
+  const field = key => '.' + key;
+  const summary = Object.fromEntries(['event', 'session', 'tier', 'quantity', 'seats', 'attendees'].map(k => [k, field(k)]));
+  const choice = key => ({ rows: '.' + key, label: ':scope', control: ':scope', selected: '[aria-pressed=true]' });
+  const action = (id, label) => ({ selector: '#' + id, labels: [label] });
+  const config = {
+    blockers: ['.captcha'], soldOut: ['.soldout'],
+    stages: {
+      detail: { ...base, ready: '#detail', fields: { event: '.event' }, actions: { enter: action('enter', '不，立即购票') } },
+      options: { ...base, ready: '#options', fields: { ...summary, session: '.session[aria-pressed=true]', tier: '.tier[aria-pressed=true]' },
+        choices: { session: choice('session'), tier: choice('tier') },
+        actions: { next: action('next', '确定'), increase: action('increase', '+') } },
+      seats: { ...base, ready: '#seats', fields: { ...summary, seats: '.seat[aria-pressed=true]' },
+        choices: { seat: choice('seat') }, actions: { next: action('next', '确认选座') } },
+      checkout: { ...base, ready: '#checkout', fields: { ...summary, attendees: '.person[aria-pressed=true]' },
+        choices: { attendee: choice('person') }, actions: { submit: action('submit', '提交订单') } },
+      order: { ...base, ready: '#order', fields: { ...summary, orderId: '#id', status: '#status' } },
+    },
+  };
+  const intent = {
+    event: '示例演出', session: '周六 19:30', tier: '看台 A', quantity: 2, seats: ['A区3排12座', 'A区3排13座'],
+    attendees: ['演示甲', '演示乙'], pendingStatus: '待支付',
+  };
+  // All HTML, network actions, identities and order IDs are generated by this fixture.
+  function mount(target) {
+    const data = { event: target.event, session: '', tier: '', quantity: 1, seats: [], attendees: [] };
+    let stage = 'detail';
+    function render() {
+      document.body.innerHTML = '<main id="' + stage + '"><p class="account">已登录</p></main>';
+      const main = document.querySelector('main');
+      const show = (key, value) => {
+        const p = document.createElement('p');
+        p.className = key;
+        p.textContent = String(value);
+        main.append(p);
+      };
+      for (const [key, value] of Object.entries(data)) {
+        if (stage === 'options' && ['session', 'tier'].includes(key)) continue;
+        if (stage === 'seats' && key === 'seats') continue;
+        if (stage === 'checkout' && key === 'attendees') continue;
+        for (const item of Array.isArray(value) ? value : [value]) show(key, item);
+      }
+      function button(key, label, handler, selected) {
+        const btn = document.createElement('button');
+        if (selected === undefined) btn.id = key;
+        else {
+          btn.className = key;
+          btn.setAttribute('aria-pressed', selected);
+        }
+        btn.textContent = label;
+        btn.onclick = handler;
+        main.append(btn);
+      }
+      const move = (key, label, destination) => button(key, label, () => { stage = destination; render(); });
+      if (stage === 'detail') move('enter', '不，立即购票', 'options');
+      if (stage === 'options') {
+        for (const key of ['session', 'tier']) {
+          button(key, target[key], () => { data[key] = target[key]; render(); }, data[key] === target[key]);
+        }
+        button('increase', '+', () => { data.quantity++; render(); });
+        move('next', '确定', 'seats');
+      }
+      if (stage === 'seats' || stage === 'checkout') {
+        const key = stage === 'seats' ? 'seats' : 'attendees';
+        for (const item of target[key]) {
+          button(stage === 'seats' ? 'seat' : 'person', item, () => {
+            data[key].push(item);
+            render();
+          }, data[key].includes(item));
+        }
+        if (stage === 'seats') move('next', '确认选座', 'checkout');
+        else button('submit', '提交订单', async () => {
+          const response = await fetch('/offline/create', { method: 'POST', body: JSON.stringify(data) });
+          if (response.ok) { stage = 'order'; render(); }
+        });
+      }
+      if (stage === 'order') main.insertAdjacentHTML('beforeend', '<p id="id">mock-order</p><p id="status">待支付</p>');
+    }
+    render();
+  }
+  const context = await browser.newContext({ offline: true, serviceWorkers: 'block' });
+  t.after(() => context.close());
+  const orders = [];
+  await context.route('**/*', route => {
+    const url = route.request().url();
+    if (url === origin + path) return route.fulfill({ contentType: 'text/html; charset=utf-8',
+      body: '<!doctype html><body><script>(' + mount.toString() + ')(' + JSON.stringify(intent) + ')</script>' });
+    if (url === origin + '/offline/create' && route.request().method() === 'POST') {
+      orders.push(JSON.parse(route.request().postData()));
+      return route.fulfill({ status: 201, body: '{}' });
+    }
+    return route.abort();
+  });
+  const page = await context.newPage();
+  await page.goto(origin + path);
+  const adapter = attachWebPage(page, config);
+  let attempts = 0;
+  const result = await runCheckout(adapter, { ...intent, saleAt: new Date().toISOString() }, {
+    platform: 'web', mode: 'live', reserve: async () => ++attempts === 1, pollMs: 30, timeoutMs: 7500, confirmMs: 4000,
+  });
+  assert.equal(result.status, 'pending_payment');
+  assert.equal(attempts, 1);
+  const { pendingStatus, ...expected } = intent;
+  assert.deepEqual(orders, [expected]);
+});
+
+test('after an external redirect the runner uses the configured read-only order URL', async t => {
+  const { runCheckout } = await import('../src/engine.mjs');
+  const origin = 'https://buy.damai.cn';
+  const context = await browser.newContext({ offline: true, serviceWorkers: 'block' });
+  t.after(() => context.close());
+  const intent = {
+    event: 'Fixture', session: 'Evening', tier: 'A', quantity: 1, seats: [], attendees: ['Viewer'],
+    pendingStatus: '待支付', saleAt: new Date().toISOString(),
+  };
+  const summary = '<p id="event">Fixture</p><p id="session">Evening</p><p id="tier">A</p>' +
+    '<p id="quantity">1</p><p class="viewer">Viewer</p>';
+  const fields = { event: '#event', session: '#session', tier: '#tier', quantity: '#quantity', attendees: '.viewer' };
+  const login = '<p id="login">Logged in</p>';
+  const stage = (path, ready) => ({ origin, path, ready, login: '#login' });
+  const config = {
+    blockers: ['.challenge'], soldOut: [], orderLookupUrl: origin + '/orders',
+    stages: {
+      checkout: { ...stage('/checkout', '#submit'), fields,
+        actions: { submit: { selector: '#submit', labels: ['提交订单'] } } },
+      orders: { ...stage('/orders', '#orders'),
+        actions: { openOrder: { selector: 'a', labels: ['订单详情'] } } },
+      order: { ...stage('/order/one', '#status'), fields: { ...fields, status: '#status', orderId: '#id',
+        createdAt: { selector: 'time', attribute: 'datetime' } } },
+    },
+  };
+  let createdAt;
+  let reads = 0;
+  await context.route('**/*', async route => {
+    const url = route.request().url();
+    const html = body => route.fulfill({ contentType: 'text/html; charset=utf-8', body });
+    if (url === origin + '/checkout') {
+      return html(login + summary + '<button id="submit" onclick="location.href=\'https://pay.test/checkout\'">提交订单</button>');
+    }
+    if (url === 'https://pay.test/checkout') {
+      createdAt = new Date().toISOString();
+      return html('<p>Mock payment service</p>');
+    }
+    if (url === origin + '/orders') {
+      reads++;
+      return html(login + '<main id="orders"><a href="/order/one">订单详情</a></main>');
+    }
+    if (url === origin + '/order/one') {
+      return html(login + summary + '<p id="status">待支付</p><p id="id">fixture-order</p>' +
+        '<time datetime="' + createdAt + '">Fixture time</time>');
+    }
+    return route.abort();
+  });
+  const page = await context.newPage();
+  await page.goto(origin + '/checkout');
+  const adapter = attachWebPage(page, config);
+  t.after(() => adapter.close());
+  const result = await runCheckout(adapter, intent, {
+    mode: 'live', platform: 'web', reserve: async () => true, pollMs: 30, confirmMs: 5000,
+  });
+  assert.equal(result.status, 'pending_payment');
+  assert.equal(reads, 1);
+});

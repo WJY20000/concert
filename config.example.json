@@ -1,0 +1,20 @@
+{
+  "provider": "damai",
+  "platform": "web",
+  "providers": {
+    "damai": {
+      "web": "profiles/web.json",
+      "android": "profiles/android.json"
+    }
+  },
+  "intent": {
+    "event": "12/04｜VICETONE 2026中国巡演 [V神] @南京MEHUAN",
+    "session": "周六 19:30",
+    "tier": "看台 A",
+    "quantity": 2,
+    "seats": ["A区3排12座", "A区3排13座"],
+    "attendees": ["演示甲", "演示乙"],
+    "saleAt": null,
+    "pendingStatus": "待支付"
+  }
+}

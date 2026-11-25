@@ -1,0 +1,117 @@
+{
+  "cdp": "http://127.0.0.1:9222",
+  "blockers": [".login-dialog", ".captcha-dialog", "iframe[title='安全验证']"],
+  "soldOut": [".selected-tier-sold-out", ".selected-seat-unavailable"],
+  "stages": {
+    "detail": {
+      "origin": "https://detail.damai.cn",
+      "path": "/item.htm",
+      "query": {"id": "1102631725191"},
+      "ready": ".perform__order",
+      "login": ".login-user .name",
+      "fields": {
+        "event": ".perform__title",
+        "session": ".session-options .selected .option-label",
+        "tier": ".tier-options .selected .option-label",
+        "quantity": "input.cafe-c-input-number-input"
+      },
+      "choices": {
+        "session": {"rows": ".session-options .option", "label": ".option-label", "control": ":scope", "selected": ".selected, [aria-selected=true]"},
+        "tier": {"rows": ".tier-options .option", "label": ".option-label", "control": ":scope", "selected": ".selected, [aria-selected=true]"}
+      },
+      "actions": {
+        "enter": {"selector": ".buy-link, .buy__button__text, a.web-entry", "labels": ["不，立即购票", "不， 立即购票", "立即预订", "立即购买", "选座购买"]},
+        "increase": {"selector": ".quantity-plus, .cafe-c-input-number-handler-up", "labels": ["+"]},
+        "decrease": {"selector": ".quantity-minus, .cafe-c-input-number-handler-down", "labels": ["-", "−"]}
+      }
+    },
+    "options": {
+      "origin": "https://detail.damai.cn",
+      "path": "/item.htm",
+      "query": {"id": "1102631725191"},
+      "ready": ".sku-options-panel",
+      "login": ".login-user .name",
+      "fields": {
+        "event": ".sku-options-panel .event-title",
+        "session": ".sku-options-panel .session-options .selected .option-label",
+        "tier": ".sku-options-panel .tier-options .selected .option-label",
+        "quantity": ".sku-options-panel .quantity-value"
+      },
+      "choices": {
+        "session": {"rows": ".sku-options-panel .session-options .option", "label": ".option-label", "control": ":scope", "selected": ".selected"},
+        "tier": {"rows": ".sku-options-panel .tier-options .option", "label": ".option-label", "control": ":scope", "selected": ".selected"}
+      },
+      "actions": {
+        "increase": {"selector": ".sku-options-panel .quantity-plus", "labels": ["+"]},
+        "next": {"selector": ".sku-footer-buy-button", "labels": ["确定", "选座购买", "立即购买"]}
+      }
+    },
+    "seats": {
+      "origin": "https://buy.damai.cn",
+      "path": "/replace-seat-map-path",
+      "ready": ".seat-map-panel",
+      "login": ".account-name",
+      "fields": {
+        "event": ".event-title",
+        "session": ".session-name",
+        "tier": ".tier-name",
+        "quantity": ".quantity-value",
+        "seats": ".selected-seat-summary .seat-name"
+      },
+      "choices": {
+        "seat": {"rows": ".seat-map-panel .seat", "label": ".seat-name", "control": ":scope", "selected": ".selected, [aria-checked=true]"}
+      },
+      "actions": {
+        "next": {"selector": ".seat-confirm", "labels": ["确认选座", "确定"]}
+      }
+    },
+    "checkout": {
+      "origin": "https://buy.damai.cn",
+      "path": "/orderConfirm",
+      "ready": "#dmOrderSubmitBlock_DmOrderSubmitBlock",
+      "login": ".account-name",
+      "fields": {
+        "event": ".order-summary .event-title",
+        "session": ".order-summary .session-name",
+        "tier": ".order-summary .tier-name",
+        "quantity": ".order-summary .quantity-value",
+        "seats": ".order-summary .seat-name",
+        "attendees": ".viewer-row:has(input:checked) .viewer-name, .viewer-row[aria-checked=true] .viewer-name",
+        "submittedOrderId": ".submission-result .order-number"
+      },
+      "choices": {
+        "attendee": {"rows": "#dmViewerBlock_DmViewerBlock .viewer-row", "label": ".viewer-name", "control": ".viewer-checkbox", "selected": "input:checked, [aria-checked=true]"}
+      },
+      "actions": {
+        "submit": {"selector": "#dmOrderSubmitBlock_DmOrderSubmitBlock button, .order-submit", "labels": ["提交订单", "立即提交", "同意以上协议并提交订单"]},
+        "orders": {"selector": "a.my-orders", "labels": ["我的订单"]}
+      }
+    },
+    "orders": {
+      "origin": "https://buy.damai.cn",
+      "path": "/replace-order-list-path",
+      "ready": ".order-list-loaded",
+      "login": ".account-name",
+      "actions": {
+        "openOrder": {"selector": ".latest-order a.order-details", "labels": ["订单详情", "查看订单"]}
+      }
+    },
+    "order": {
+      "origin": "https://buy.damai.cn",
+      "path": "/replace-order-detail-path/:id",
+      "ready": ".order-details",
+      "login": ".account-name",
+      "fields": {
+        "orderId": ".order-number",
+        "status": ".order-status",
+        "event": ".event-title",
+        "session": ".session-name",
+        "tier": ".tier-name",
+        "quantity": ".quantity-value",
+        "seats": ".order-details .seat-name",
+        "attendees": ".order-details .viewer-name",
+        "createdAt": {"selector": "time.order-created", "attribute": "datetime"}
+      }
+    }
+  }
+}

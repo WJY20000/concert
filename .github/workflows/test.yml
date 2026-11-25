@@ -1,0 +1,41 @@
+name: Offline checkout tests
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+      - if: runner.os == 'Windows'
+        run: npx playwright install chromium
+      - name: Test the simulated checkout, browser, device and console
+        shell: bash
+        run: |
+          mkdir -p test-artifacts
+          set -o pipefail
+          npm test 2>&1 | tee test-artifacts/test.log
+      - name: Upload fixture diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-checkout-diagnostics-${{ matrix.os }}
+          path: test-artifacts/
+          if-no-files-found: ignore

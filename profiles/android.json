@@ -1,0 +1,121 @@
+{
+  "endpoint": "http://127.0.0.1:4723",
+  "appPackage": "cn.damai",
+  "udid": "",
+  "blockers": [
+    { "text": "请完成验证" },
+    { "text": "安全验证" },
+    { "text": "请先登录" }
+  ],
+  "soldOut": [
+    { "text": "本场次已售罄" },
+    { "text": "提交缺货登记" }
+  ],
+  "stages": {
+    "detail": {
+      "marker": { "id": "trade_project_detail_purchase_status_bar_container_fl" },
+      "login": { "id": "replace_detail_logged_in_marker" },
+      "fields": {
+        "event": { "id": "replace_event_title" }
+      },
+      "actions": {
+        "enter": {
+          "target": { "id": "trade_project_detail_purchase_status_bar_container_fl" },
+          "name": { "id": "tv_left_main_text" },
+          "labels": ["立即购买", "立即预订", "选座购买"]
+        }
+      }
+    },
+    "options": {
+      "marker": { "id": "project_detail_perform_price_flowlayout" },
+      "login": { "id": "replace_options_logged_in_marker" },
+      "fields": {
+        "event": { "id": "replace_event_title" },
+        "session": { "id": "replace_selected_session" },
+        "tier": { "id": "replace_selected_tier" },
+        "quantity": { "id": "replace_current_quantity" }
+      },
+      "choices": {
+        "session": {
+          "row": { "id": "replace_session_row", "within": { "id": "project_detail_perform_flowlayout" } },
+          "name": { "id": "item_text" },
+          "stateAttribute": "selected"
+        },
+        "tier": {
+          "row": { "id": "replace_price_row", "within": { "id": "project_detail_perform_price_flowlayout" } },
+          "name": { "id": "item_text" },
+          "stateAttribute": "selected"
+        }
+      },
+      "actions": {
+        "increase": { "target": { "id": "img_jia" }, "labels": ["增加", "+"] },
+        "decrease": { "target": { "id": "replace_decrease_count" }, "labels": ["减少", "-"] },
+        "next": { "target": { "id": "btn_buy_view" }, "labels": ["确定", "确认", "确定购买", "选座购买"] }
+      }
+    },
+    "seats": {
+      "marker": { "id": "replace_seat_map" },
+      "login": { "id": "replace_seats_logged_in_marker" },
+      "fields": {
+        "event": { "id": "replace_event_title" },
+        "session": { "id": "replace_selected_session" },
+        "tier": { "id": "replace_selected_tier" },
+        "seats": { "id": "replace_selected_seat_name" }
+      },
+      "choices": {
+        "seat": { "row": { "id": "replace_accessible_seat" }, "stateAttribute": "selected" }
+      },
+      "actions": {
+        "next": { "target": { "id": "replace_confirm_seats" }, "labels": ["确认选座"] }
+      }
+    },
+    "checkout": {
+      "marker": { "id": "recycler_main" },
+      "login": { "id": "replace_checkout_logged_in_marker" },
+      "fields": {
+        "event": { "id": "replace_checkout_event_title" },
+        "session": { "id": "replace_checkout_session" },
+        "tier": { "id": "replace_checkout_tier" },
+        "quantity": { "id": "replace_checkout_quantity" },
+        "seats": { "id": "replace_checkout_seat_name" },
+        "attendees": { "id": "replace_viewer_name", "within": { "id": "replace_viewer_row", "has": { "id": "replace_viewer_checkbox", "checked": true } } },
+        "submittedOrderId": { "id": "replace_receipt_order_number" }
+      },
+      "choices": {
+        "attendee": {
+          "row": { "id": "replace_viewer_row", "within": { "id": "recycler_main" } },
+          "name": { "id": "replace_viewer_name" },
+          "state": { "id": "replace_viewer_checkbox" },
+          "target": { "id": "replace_viewer_checkbox" },
+          "stateAttribute": "checked"
+        }
+      },
+      "actions": {
+        "submit": { "target": { "text": "提交订单" }, "labels": ["提交订单"] },
+        "orders": { "target": { "text": "查看订单" }, "labels": ["查看订单"] }
+      }
+    },
+    "orders": {
+      "marker": { "id": "replace_recent_orders" },
+      "login": { "id": "replace_orders_logged_in_marker" },
+      "actions": {
+        "openOrder": { "target": { "id": "replace_latest_order_details" }, "labels": ["订单详情"] }
+      }
+    },
+    "order": {
+      "marker": { "id": "replace_order_detail" },
+      "login": { "id": "replace_order_logged_in_marker" },
+      "fields": {
+        "event": { "id": "replace_order_event" },
+        "session": { "id": "replace_order_session" },
+        "tier": { "id": "replace_order_tier" },
+        "quantity": { "id": "replace_order_quantity" },
+        "attendees": { "id": "replace_order_viewer_name" },
+        "seats": { "id": "replace_order_seat_name" },
+        "orderId": { "id": "replace_order_id" },
+        "status": { "id": "replace_order_status" },
+        "createdAt": { "id": "replace_order_iso_creation_timestamp" }
+      }
+    }
+  }
+}
