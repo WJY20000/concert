@@ -3,8 +3,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 const purchaseStages = new Set(['detail', 'options', 'seats', 'checkout']);
 const submitLabels = new Set(['提交订单', '立即提交', '确认下单', '确认提交订单', '同意以上协议并提交订单', 'Create order']);
 const clean = value => typeof value === 'string' ? value.trim().replace(/\s+/gu, ' ') : '';
-const eventKey = value => clean(value).replace(/】 +/gu, '】').replace(/ *[|｜] */gu, '|');
-const count = value => {
+export const eventKey = value => clean(value).replace(/】 +/gu, '】').replace(/ *[|｜] */gu, '|');
+export const ticketQuantity = value => {
   const digits = String(value ?? '').trim().match(/^(?:[×xX]\s*)?(\d+)\s*张?$/u);
   return digits ? Number(digits[1]) : NaN;
 };
@@ -18,7 +18,7 @@ function sameList(actual, expected) {
 function matchesIntent(fields, intent) {
   return eventKey(fields.event) === eventKey(intent.event) &&
     ['session', 'tier'].every(key => clean(fields[key]) === intent[key]) &&
-    count(fields.quantity) === intent.quantity && sameList(fields.attendees, intent.attendees) &&
+    ticketQuantity(fields.quantity) === intent.quantity && sameList(fields.attendees, intent.attendees) &&
     (!intent.seats.length || sameList(fields.seats, intent.seats));
 }
 
@@ -53,16 +53,17 @@ function nextStep(view, intent) {
   const { stage, fields, controls } = view;
   if (view.blocked) return { error: 'challenge' };
   if (view.soldOut) return { error: 'sold_out' };
+  if (view.checkoutMismatch) return { error: 'selection_mismatch' };
   if (!purchaseStages.has(stage)) return { error: 'page_unrecognized' };
   if (!view.loggedIn) return { error: 'login_unverified' };
   if (!clean(fields.event)) return { error: 'selection_unavailable' };
   if (eventKey(fields.event) !== eventKey(intent.event)) return { error: 'wrong_event' };
 
   if (stage === 'checkout') {
-    if (!clean(fields.session) || !clean(fields.tier) || !Number.isSafeInteger(count(fields.quantity)) ||
+    if (!clean(fields.session) || !clean(fields.tier) || !Number.isSafeInteger(ticketQuantity(fields.quantity)) ||
         (intent.seats.length && !Array.isArray(fields.seats))) return { error: 'selection_unavailable' };
     if (['session', 'tier'].some(key => clean(fields[key]) !== intent[key]) ||
-        count(fields.quantity) !== intent.quantity ||
+        ticketQuantity(fields.quantity) !== intent.quantity ||
         (intent.seats.length && !sameList(fields.seats, intent.seats))) return { error: 'selection_mismatch' };
     const choose = chooseMany(view, 'attendee', 'attendees', intent.attendees);
     if (choose) return choose;
@@ -86,7 +87,7 @@ function nextStep(view, intent) {
   }
   // Some pages reveal quantity only after the ticket tier or seats have been chosen.
   if (stage !== 'seats' && fields.quantity !== undefined) {
-    const current = count(fields.quantity);
+    const current = ticketQuantity(fields.quantity);
     if (!Number.isSafeInteger(current)) return { error: 'selection_unavailable' };
     if (current !== intent.quantity) {
       const key = current < intent.quantity ? 'increase' : 'decrease';

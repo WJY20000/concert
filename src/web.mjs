@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 
-const allowedStages = new Set(['detail', 'options', 'seats', 'checkout', 'order', 'orders']);
+const allowedStages = new Set(['detail', 'options', 'seats', 'checkout', 'h5Checkout', 'order', 'orders']);
 const allowedActions = new Set(['enter', 'next', 'submit', 'increase', 'decrease', 'orders', 'openOrder']);
 const choiceTypes = new Set(['event', 'session', 'tier', 'seat', 'attendee']);
 const strings = values => Array.isArray(values) && values.every(value => typeof value === 'string' && value.trim());
@@ -36,7 +36,7 @@ function validateProfile(profile) {
       if (!allowedActions.has(key) || !selector(action.selector) || !strings(action.labels) ||
           (!readableAttribute(action.labelAttribute) && action.labelAttribute !== undefined) ||
           !action.labels.length || action.labels.some(label => /支付|付款|收银|\bpay(?:ment)?\b/iu.test(label)) ||
-          (key === 'submit' && name !== 'checkout')) throw new Error('invalid_web_action');
+          (key === 'submit' && !['checkout', 'h5Checkout'].includes(name))) throw new Error('invalid_web_action');
     }
     for (const [type, choice] of Object.entries(stage.choices ?? {})) {
       if (!choiceTypes.has(type) || (choice.labelAttribute !== undefined && !readableAttribute(choice.labelAttribute)) ||
@@ -93,8 +93,10 @@ function inspectDocument({ profile, candidates, url, prior, key, arm, diagnose }
   }
   const ready = markers.filter(marker => marker.ready === 1);
   if (ready.length !== 1) return prior ? null : view;
-  view.stage = ready[0].stage;
-  const stage = profile.stages[view.stage];
+  const mappedStage = ready[0].stage;
+  view.stage = mappedStage === 'h5Checkout' ? 'checkout' : mappedStage;
+  if (mappedStage === 'h5Checkout') view.layout = 'damai_h5';
+  const stage = profile.stages[mappedStage];
   view.loggedIn = find(document, stage.login).length === 1;
   const damaiOptions = damaiPage && ['detail', 'options'].includes(view.stage);
   const optionText = (name, value) => damaiOptions && ['session', 'tier'].includes(name)
@@ -219,6 +221,10 @@ export function attachWebPage(page, profile, disconnect) {
         throw new Error('web_snapshot_failed_check_selectors');
       });
       if (target !== active) return unknown();
+      if (view.layout === 'damai_h5') {
+        const refs = new URL(input.url).searchParams.getAll('buyParam');
+        if (refs.length === 1 && /^\d+_\d+_\d+$/u.test(refs[0])) view.checkoutRef = refs[0];
+      }
       if (view.stage !== 'unknown') captures.set(view, { target, url: input.url, prior: structuredClone(view) });
       return view;
     },
@@ -304,7 +310,7 @@ export async function connectWeb(profile, { inspection = false } = {}) {
     const candidates = browser.contexts().flatMap(context => context.pages()).filter(page => {
       const url = new URL(page.url());
       return Object.entries(profile.stages).some(([name, stage]) =>
-        (inspection || !['order', 'orders'].includes(name)) && routeMatches(url, stage));
+        (inspection || !['order', 'orders', 'h5Checkout'].includes(name)) && routeMatches(url, stage));
     });
     if (candidates.length !== 1) throw new Error('web_expected_one_purchase_tab');
     return attachWebPage(candidates[0], profile, () => browser.close());

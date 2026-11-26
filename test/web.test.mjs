@@ -543,6 +543,14 @@ test('H5 rehearsal fills the missing exact-name attendee and stops on the observ
   const page = await context.newPage();
   await page.goto(checkout);
   const intent = { attendees: ['演示甲', '演示乙'], pendingStatus: '待支付' };
+  const h5Checkout = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(new URL('../profiles/damai-h5-checkout.json', import.meta.url), 'utf8').then(JSON.parse));
+  const alias = attachWebPage(page, { ...sample, stages: { h5Checkout } });
+  const captured = await alias.snapshot();
+  assert.equal(captured.stage, 'checkout');
+  assert.equal(captured.layout, 'damai_h5');
+  assert.equal(captured.checkoutRef, item + '_2_99');
+  await alias.close();
   const result = await rehearseH5(page, sample, intent, item);
   assert.equal(result.status, 'rehearsed');
   assert.equal(await page.locator('.icondanxuan-xuanzhong_').count(), 2);

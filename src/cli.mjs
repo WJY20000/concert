@@ -33,7 +33,7 @@ async function main() {
     const journal = makeJournal(configDir, intent);
     if (mode === 'live' && await journal.reserved()) return fail('previous_submission_requires_review', 'local_marker');
     adapter = platform === 'web'
-      ? await (await import('./web.mjs')).connectWeb(profile)
+      ? await (await import('./damai-h5.mjs')).connectTicketWeb(profile, intent)
       : await (await import('./android.mjs')).connectAndroid(profile);
     emit({ event: 'connected', at: new Date().toISOString(), platform, provider, mode });
     const result = await runCheckout(adapter, intent, { platform, mode, emit, reserve: journal.reserve, signal: stop.signal });

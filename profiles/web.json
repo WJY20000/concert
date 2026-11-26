@@ -1,5 +1,6 @@
 {
   "cdp": "http://127.0.0.1:9222",
+  "damaiH5": {"tier": "早鸟票88元", "amountCents": 8800},
   "blockers": [".login-dialog", ".captcha-dialog", "iframe[title='安全验证']"],
   "soldOut": [".selected-tier-sold-out", ".selected-seat-unavailable", ".perform__order__box .sku_item.active .notticket", ".perform .perform__soldout"],
   "stages": {
