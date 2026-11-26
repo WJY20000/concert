@@ -8,7 +8,13 @@ const cents = value => {
   return Number(whole) * 100 + Number(rest.padEnd(2, '0'));
 };
 
-function timeKey(value) {
+export function detailPriceCents(label) {
+  const matches = [...label.matchAll(/(?:[¥￥]\s*(\d+(?:\.\d{1,2})?))|(?<![.\d])(\d+(?:\.\d{1,2})?)\s*元/gu)];
+  const prices = new Set(matches.map(match => cents(match[1] ?? match[2])));
+  return prices.size === 1 ? [...prices][0] : NaN;
+}
+
+export function timeKey(value) {
   const match = value?.match(/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})\s*(?:(?:周|星期)[一二三四五六日天]\s*)?(\d{2}:\d{2})$/u);
   if (!match) return null;
   return [match[1], match[2].padStart(2, '0'), match[3].padStart(2, '0'), match[4]].join('/');
@@ -24,7 +30,7 @@ export function guardDamaiH5(adapter, intent, itemId, rule) {
   function verifiesDetail(view) {
     const { fields, controls } = view;
     const samePrice = Object.entries(controls).filter(([key, control]) => key.startsWith('tier:') &&
-      cents(control.label.match(/(?<![.\d])(\d+(?:\.\d{1,2})?)\s*元/u)?.[1]) === rule.amountCents);
+      detailPriceCents(control.label) === rule.amountCents);
     return view.stage === 'detail' && fields.session === intent.session && fields.tier === rule.tier &&
       eventKey(fields.event) === eventKey(intent.event) && ticketQuantity(fields.quantity) === intent.quantity &&
       controls[tierControl]?.selected === true && samePrice.length === 1 && samePrice[0][0] === tierControl;

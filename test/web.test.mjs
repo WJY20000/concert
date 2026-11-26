@@ -509,6 +509,30 @@ test('checkout probe identifies the changed custom attendee state without printi
   assert.doesNotMatch(JSON.stringify({ before, result }), /演示甲|演示乙/u);
 });
 
+function h5Fixture({ event = '【北京】演练音乐会', initiallySelected = 0 } = {}) {
+  const nameRows = ['演示甲', '演示乙', '其他人'].map((name, i) => `
+    <div><div><div><div class="viwer-info-name"><div>${name}</div></div></div></div>
+      <div><i class="iconfont ${i === initiallySelected ? 'icondanxuan-xuanzhong_' : 'icondanxuan-weixuan_'}" onclick="toggle(this)"></i></div></div>
+  `).join('');
+  return `<!doctype html><style>.iconfont{display:inline-block;width:24px;height:24px;background:#bbb} #dmOrderSubmitBlock_DmOrderSubmitBlock span{display:inline-block}</style>
+    <div id="dmItemBlock_DmItemBlock"><div><div><div><div></div><div></div>
+      <div><div><div><span>${event}</span></div><div>演练场馆</div><div><span>2026.12.31 20:00</span></div></div></div>
+      <div><div><div><div><div>¥247.00票档</div><div><span>×2张</span></div></div></div></div></div>
+    </div></div></div></div>
+    <div id="dmViewerBlock_DmViewerBlock"><div><div><div><div><span>实名观演人</span></div></div></div></div><div><div>${nameRows}</div></div></div>
+    <div id="dmOrderSubmitBlock_DmOrderSubmitBlock"><div></div><div><div><div></div><div></div>
+      <div><div></div><div><div></div><div></div><div><span onclick="window.submissions++">立即提交</span></div></div></div>
+    </div></div></div>
+    <script>
+      window.clicks = 0; window.submissions = 0;
+      function toggle(icon) {
+        window.clicks++;
+        icon.classList.toggle('icondanxuan-weixuan_');
+        icon.classList.toggle('icondanxuan-xuanzhong_');
+      }
+    </script>`;
+}
+
 test('H5 rehearsal fills the missing exact-name attendee and stops on the observed submit control', async t => {
   const { rehearseH5 } = await import('../tools/probe-rehearsal.mjs');
   const sample = await import('node:fs/promises').then(({ readFile }) =>
@@ -517,27 +541,7 @@ test('H5 rehearsal fills the missing exact-name attendee and stops on the observ
   t.after(() => context.close());
   const item = '1100435904158';
   const checkout = 'https://m.damai.cn/app/dmfe/h5-ultron-buy/index.html?buyParam=' + item + '_2_99';
-  const nameRows = ['演示甲', '演示乙', '其他人'].map((name, i) => `
-    <div><div><div><div class="viwer-info-name"><div>${name}</div></div></div></div>
-      <div><i class="iconfont ${i === 0 ? 'icondanxuan-xuanzhong_' : 'icondanxuan-weixuan_'}" onclick="toggle(this)"></i></div></div>
-  `).join('');
-  const html = `<!doctype html><style>.iconfont{display:inline-block;width:24px;height:24px;background:#bbb} #dmOrderSubmitBlock_DmOrderSubmitBlock span{display:inline-block}</style>
-    <div id="dmItemBlock_DmItemBlock"><div><div><div><div></div><div></div>
-      <div><div><div><span>【北京】演练音乐会</span></div><div>演练场馆</div><div><span>2026.12.31 20:00</span></div></div></div>
-      <div><div><div><div><div>¥247.00票档</div><div><span>×2张</span></div></div></div></div></div>
-    </div></div></div></div>
-    <div id="dmViewerBlock_DmViewerBlock"><div><div><div><div><span>实名观演人</span></div></div></div></div><div><div>${nameRows}</div></div></div>
-    <div id="dmOrderSubmitBlock_DmOrderSubmitBlock"><div></div><div><div><div></div><div></div>
-      <div><div></div><div><div></div><div></div><div><span onclick="window.submitted = true">立即提交</span></div></div></div>
-    </div></div></div>
-    <script>
-      window.clicks = 0; window.submitted = false;
-      function toggle(icon) {
-        window.clicks++;
-        icon.classList.toggle('icondanxuan-weixuan_');
-        icon.classList.toggle('icondanxuan-xuanzhong_');
-      }
-    </script>`;
+  const html = h5Fixture();
   await context.route('**/*', route => route.request().url().startsWith(checkout)
     ? route.fulfill({ contentType: 'text/html; charset=utf-8', body: html }) : route.abort());
   const page = await context.newPage();
@@ -554,11 +558,11 @@ test('H5 rehearsal fills the missing exact-name attendee and stops on the observ
   const result = await rehearseH5(page, sample, intent, item);
   assert.equal(result.status, 'rehearsed');
   assert.equal(await page.locator('.icondanxuan-xuanzhong_').count(), 2);
-  assert.deepEqual(await page.evaluate(() => [window.clicks, window.submitted]), [1, false]);
+  assert.deepEqual(await page.evaluate(() => [window.clicks, window.submissions]), [1, 0]);
 
   await assert.rejects(() => rehearseH5(page, sample, { ...intent, attendees: ['演示甲'] }, item), /practice_quantity_unverified/u);
   await assert.rejects(() => rehearseH5(page, sample, intent, '1102631725191'), /practice_checkout_item_unverified/u);
-  assert.deepEqual(await page.evaluate(() => [window.clicks, window.submitted]), [1, false]);
+  assert.deepEqual(await page.evaluate(() => [window.clicks, window.submissions]), [1, 0]);
 });
 
 test('visible Damai access exception halts purchase even when the checkout selectors no longer match', async t => {
@@ -572,4 +576,58 @@ test('visible Damai access exception halts purchase even when the checkout selec
   assert.equal(snapshot.blocked, true);
   const result = await runCheckout(adapter, { saleAt: null }, { mode: 'rehearse' });
   assert.equal(result.status, 'challenge');
+});
+
+test('Beijing order check starts at the detail page, selects both people and dispatches one submit', async t => {
+  const { beijingItemId, beijingIntent, runBeijingCheck } = await import('../tools/beijing-order-check.mjs');
+  const { rehearsalProfile } = await import('../tools/prepare-rehearsal.mjs');
+  const { readFile } = await import('node:fs/promises');
+  const config = JSON.parse(await readFile(new URL('../profiles/web.json', import.meta.url), 'utf8'));
+  const h5Checkout = JSON.parse(await readFile(new URL('../profiles/damai-h5-checkout.json', import.meta.url), 'utf8'));
+  const prepared = rehearsalProfile(config, beijingItemId, 'h5');
+  const address = 'https://detail.damai.cn/item.htm?id=' + beijingItemId;
+  const checkout = 'https://m.damai.cn/app/dmfe/h5-ultron-buy/index.html?buyParam=' + beijingItemId + '_2_99';
+  const event = '【北京】陈鸿宇演练音乐会';
+  const context = await browser.newContext({ offline: true, serviceWorkers: 'block' });
+  t.after(() => context.close());
+
+  const detailHtml = `<header class="user-header"><a class="J_userinfo_name"><span class="name-user">演示账号</span></a></header>
+    <main class="perform"><div class="order">
+      <div class="title"><span class="tip">总票代</span><span>${event}</span></div>
+      <div class="perform__order__box">
+        <div class="perform__order__select__performs">
+          <div class="select_right_list_item active"><span>2026-12-31 周四 20:00</span></div>
+        </div>
+        <div class="select_right_list_item sku_item active"><div class="skuname">¥247.00票档</div></div>
+        <div class="perform__order__price"><div class="number">
+          <button class="plus" onclick="document.querySelector('.num').textContent='2 张'">+</button>
+          <span class="num">1 张</span>
+        </div></div>
+        <div class="qrcode-wrapper"><a class="buy-link" href="${checkout}">不，立即购票</a></div>
+      </div>
+    </div></main>`;
+  await context.route('**/*', route => {
+    const url = route.request().url();
+    const html = url === address ? detailHtml : url === checkout ? h5Fixture({ event, initiallySelected: -1 }) : null;
+    return html ? route.fulfill({ contentType: 'text/html; charset=utf-8', body: html }) : route.abort();
+  });
+  const page = await context.newPage();
+  await page.goto(address);
+  const adapter = attachWebPage(page, { ...prepared, stages: { detail: prepared.stages.detail, h5Checkout } });
+  t.after(() => adapter.close());
+  const intent = { attendees: ['演示甲', '演示乙'], pendingStatus: '待支付' };
+  const view = await adapter.snapshot();
+  assert.throws(() => beijingIntent({ ...intent, attendees: ['演示甲'] }, view), /beijing_target_mismatch/u);
+  assert.throws(() => beijingIntent(intent, { ...view, fields: { ...view.fields, tier: '¥138.00票档' } }), /beijing_target_mismatch/u);
+  const trace = [];
+  let reservations = 0;
+  const result = await runBeijingCheck(adapter, beijingIntent(intent, view), {
+    reserve: async () => ++reservations === 1,
+    emit: entry => trace.push(entry.event),
+    confirmMs: 100,
+  });
+  assert.equal(result.status, 'order_status_unknown');
+  assert.equal(reservations, 1);
+  assert.ok(trace.includes('submit_click_returned'));
+  assert.deepEqual(await page.evaluate(() => [window.clicks, window.submissions]), [2, 1]);
 });

@@ -72,3 +72,13 @@ node .\tools\probe-rehearsal.mjs --rehearse 1100435904158
 ```
 
 出现 `rehearsed` 表示到达提交前；`practice_quantity_unverified` 时检查页面张数是否与本机配置人数一致。
+
+### 北京场单次真实提交验证
+
+在调试 Chrome 打开北京陈鸿宇演出 `1100435904158` 的在售详情页，选中 12 月 31 日 20:00 场的 247 元档。本机配置需要包含两位已保存的实名观演人。下面的命令会立即跑完选票和实名勾选，并尝试提交一笔真实订单。此命令专用于北京场。
+
+```powershell
+node .\tools\beijing-order-check.mjs --submit-once
+```
+
+`submit_click_returned` 表示浏览器已返回提交点击结果。若接着输出 `order_status_unknown`，或页面跳转，请在大麦「我的订单」核对两张票的待支付订单。后续付款由用户在平台完成。
