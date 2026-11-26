@@ -16,13 +16,17 @@ function fixture(options = {}) {
   let stage = options.skipEntry ? 'checkout' : 'detail';
   const selected = [];
   const clicks = [];
+  let detailReads = 0;
+  let quantity = options.delayedQuantity ? 1 : 2;
   const raw = {
     async snapshot() {
       const result = { stage, loggedIn: true, blocked: false, soldOut: false };
       if (stage === 'detail') return {
         ...result,
-        fields: { event: intent.event, session: intent.session, tier: intent.tier, quantity: '2张' },
+        fields: { event: intent.event, session: intent.session, tier: intent.tier,
+          ...(!options.delayedQuantity || ++detailReads >= 3 ? { quantity: quantity + '张' } : {}) },
         controls: {
+          ...(options.delayedQuantity ? { increase: choice('+') } : {}),
           enter: choice('不，立即购票'), ['tier:' + intent.tier]: choice(intent.tier, true),
           'tier:预售票138元': choice('预售票138元'),
           ...(options.duplicatePrice ? { 'tier:其他票88元': choice('其他票88元') } : {}),
@@ -51,6 +55,7 @@ function fixture(options = {}) {
       if (key === 'enter') stage = 'checkout';
       else if (key.startsWith('attendee:')) selected.push(key.slice('attendee:'.length));
       else if (key === 'submit') stage = 'order';
+      else if (key === 'increase') quantity++;
       return true;
     },
   };
@@ -74,6 +79,17 @@ test('H5 live flow submits only once after all checks and verifies the simulated
   assert.equal(result.status, 'pending_payment');
   assert.equal(reservations, 1);
   assert.deepEqual(clicks, ['enter', 'attendee:演示甲', 'attendee:演示乙', 'submit']);
+});
+
+test('H5 waits for the quantity controls before entering when the buy button appears first', async () => {
+  const { adapter, clicks } = fixture({ delayedQuantity: true });
+  let now = Date.parse(intent.saleAt) - 30;
+  const result = await runCheckout(adapter, intent, {
+    mode: 'live', now: () => now, sleep: async ms => { now += ms; },
+    reserve: async () => true,
+  });
+  assert.equal(result.status, 'pending_payment');
+  assert.deepEqual(clicks, ['increase', 'enter', 'attendee:演示甲', 'attendee:演示乙', 'submit']);
 });
 
 for (const [label, options] of [

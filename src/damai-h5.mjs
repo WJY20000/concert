@@ -52,7 +52,14 @@ export function guardDamaiH5(adapter, intent, itemId, rule) {
     ...adapter,
     async snapshot() {
       const raw = await adapter.snapshot();
-      if (raw.layout !== 'damai_h5' || raw.blocked || raw.soldOut) return raw;
+      if (raw.blocked || raw.soldOut) return raw;
+      // The sale button and the quantity controls can render at different times.
+      if (raw.stage === 'detail' && raw.fields.quantity === undefined && raw.controls.enter?.enabled) {
+        const waiting = { ...raw, controls: { ...raw.controls, enter: { ...raw.controls.enter, enabled: false } } };
+        rawViews.set(waiting, raw);
+        return waiting;
+      }
+      if (raw.layout !== 'damai_h5') return raw;
       // An incomplete checkout can still be rendering. Let the runner wait for the required fields.
       if (!['event', 'session', 'tier', 'quantity'].every(key => raw.fields[key])) return raw;
       if (!verifiesCheckout(raw)) return { ...raw, controls: {}, checkoutMismatch: true };
