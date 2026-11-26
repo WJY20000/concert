@@ -158,6 +158,7 @@ export async function runCheckout(adapter, intent, {
 
     const deadline = (mode === 'live' ? sale : now()) + timeoutMs;
     const actions = new Set();
+    let canReloadDetail = mode === 'live' && typeof adapter.reloadDetail === 'function';
     let lastChange = -Infinity;
     while (now() <= deadline) {
       if (signal?.aborted) return finish('cancelled');
@@ -174,6 +175,15 @@ export async function runCheckout(adapter, intent, {
           continue;
         }
         return finish(step.error);
+      }
+      if (canReloadDetail && !actions.size && view.stage === 'detail' && !view.controls.enter) {
+        if (now() < sale || now() > deadline) return finish('timeout');
+        canReloadDetail = false;
+        firstAction();
+        await adapter.reloadDetail(view);
+        lastChange = now();
+        log('refreshed', { stage: view.stage });
+        continue;
       }
       const { key } = step;
       const unique = JSON.stringify([view.stage, key, step.revision]);

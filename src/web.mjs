@@ -264,6 +264,14 @@ export function attachWebPage(page, profile, disconnect) {
       return true;
     },
 
+    async reloadDetail(view) {
+      const capture = captures.get(view);
+      if (!capture || capture.prior.stage !== 'detail' || capture.target !== active ||
+          active.isClosed() || active.url() !== capture.url) throw new Error('web_stale_view');
+      captures.delete(view);
+      await capture.target.reload({ waitUntil: 'domcontentloaded', timeout: 8000 });
+    },
+
     async click(view, key) {
       const capture = captures.get(view);
       captures.delete(view);

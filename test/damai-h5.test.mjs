@@ -27,7 +27,8 @@ function fixture(options = {}) {
           ...(!options.delayedQuantity || ++detailReads >= 3 ? { quantity: quantity + '张' } : {}) },
         controls: {
           ...(options.delayedQuantity ? { increase: choice('+') } : {}),
-          enter: choice('不，立即购票'), ['tier:' + intent.tier]: choice(intent.tier, true),
+          ...(!options.noEntry ? { enter: choice('不，立即购票') } : {}),
+          ['tier:' + intent.tier]: choice(intent.tier, true),
           'tier:预售票138元': choice('预售票138元'),
           ...(options.duplicatePrice ? { 'tier:其他票88元': choice('其他票88元') } : {}),
         },
@@ -48,6 +49,9 @@ function fixture(options = {}) {
           ...Object.fromEntries(intent.attendees.map(name => ['attendee:' + name, choice(name, selected.includes(name))])),
         },
       };
+    },
+    async reloadDetail() {
+      clicks.push('reload');
     },
     async click(view, key) {
       if (view.stage === 'checkout') assert.equal(view.fields.tier, options.ticket ?? '¥88.00票档 ×2张');
@@ -90,6 +94,16 @@ test('H5 waits for the quantity controls before entering when the buy button app
   });
   assert.equal(result.status, 'pending_payment');
   assert.deepEqual(clicks, ['increase', 'enter', 'attendee:演示甲', 'attendee:演示乙', 'submit']);
+});
+
+test('the live runner reloads only once if the entry remains absent', async () => {
+  const { adapter, clicks } = fixture({ noEntry: true });
+  let now = Date.parse(intent.saleAt);
+  const result = await runCheckout(adapter, intent, {
+    mode: 'live', now: () => now, sleep: async ms => { now += ms; }, timeoutMs: 200,
+  });
+  assert.equal(result.status, 'timeout');
+  assert.deepEqual(clicks, ['reload']);
 });
 
 for (const [label, options] of [
