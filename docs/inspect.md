@@ -58,3 +58,9 @@ node .\tools\probe-rehearsal.mjs
 ```powershell
 node .\tools\probe-rehearsal.mjs --open 1100435904158
 ```
+
+若确认页的观演人用自定义图标表示选中状态，可在确认页运行下面的命令。等终端提示后手动勾选一位，输出会显示该行有哪些属性或图标状态发生了变化。命令只读取确认页。
+
+```powershell
+node .\tools\probe-rehearsal.mjs --watch-check
+```

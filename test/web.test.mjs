@@ -484,3 +484,27 @@ test('probe can set the rehearsal quantity and follow a QR link without selectin
   assert.equal(slide, 1);
   assert.equal(submit, 0);
 });
+
+test('checkout probe identifies the changed custom attendee state without printing names', async t => {
+  const { inspectControls, compareAttendeeStates } = await import('../tools/probe-rehearsal.mjs');
+  const { page } = await fixture(t, { checkoutHtml: `
+    <main class="confirm">
+      <h1>【北京】演练音乐会</h1>
+      <p>2026.12.31 20:00</p><p>¥247.00票档 ×2张</p>
+      <div id="viewer"><h2>实名观演人</h2><section>
+        <div><div class="viwer-info-name"><div>演示甲</div></div><div class="indicator" style="background-color: white"></div></div>
+        <div><div class="viwer-info-name"><div>演示乙</div></div><div class="indicator" style="background-color: white"></div></div>
+      </section></div><button>立即提交</button>
+    </main>` });
+  const input = { names: ['演示甲', '演示乙'], detailed: true };
+  const before = await page.evaluate(inspectControls, input);
+  await page.locator('.indicator').first().evaluate(el => { el.style.backgroundColor = 'red'; });
+  const after = await page.evaluate(inspectControls, input);
+  const result = compareAttendeeStates(before, after);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].row, 1);
+  assert.equal(result[0].changed[0].after.background, 'rgb(255, 0, 0)');
+  assert.match(before.attendeeRows[0].name, /^#viewer >/u);
+  assert.equal(await page.locator(before.attendeeRows[0].name).count(), 1);
+  assert.doesNotMatch(JSON.stringify({ before, result }), /演示甲|演示乙/u);
+});
