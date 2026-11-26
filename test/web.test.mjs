@@ -416,3 +416,22 @@ test('the shipped Nanjing profile recognizes the presale page and its selected e
   await page.locator('.buybtn').evaluate(el => el.classList.remove('disabled'));
   assert.equal((await adapter.snapshot()).controls.enter.enabled, true);
 });
+
+test('checkout probe reports mapped structure while leaving names and other personal text local', async t => {
+  const { inspectControls } = await import('../tools/probe-rehearsal.mjs');
+  const { page } = await fixture(t, { checkoutHtml: `
+    <main class="confirm"><p class="account">已登录</p>
+    <h1 class="title">【北京】演练音乐会</h1>
+    <p class="session">2026.12.31 20:00</p><p class="sku">¥247.00票档 ×2张</p>
+    <div id="dmViewerBlock_DmViewerBlock"><h2>实名观演人</h2>
+    <label class="person"><span class="name">演示甲</span><input type="checkbox"></label>
+    <label class="person"><span class="name">演示乙</span><input type="checkbox" checked></label>
+    <p class="contact">12345678901</p></div><button class="submit">立即提交</button></main>` });
+  const result = await page.evaluate(inspectControls, ['演示甲', '演示乙']);
+  assert.equal(result.attendeeRows.length, 2);
+  assert.equal(result.attendeeRows[1][0][0].classes[0], 'name');
+  assert.equal(result.attendeeRows[1][0][1].checks[0].checked, true);
+  assert.equal(result.submit[0][0].classes[0], 'submit');
+  assert.equal(result.ticketLine[0][0].classes[0], 'sku');
+  assert.doesNotMatch(JSON.stringify(result), /演示甲|演示乙|12345678901/u);
+});

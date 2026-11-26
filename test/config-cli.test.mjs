@@ -92,3 +92,26 @@ test('atomic reservation survives changes to platform, provider and ticket prefe
   });
   assert.equal(await makeJournal(directory, { ...config.intent, session: '另一场次' }).reserved(), false);
 });
+
+test('practice setup isolates its item, confirmation route, and number of attendees', async () => {
+  const { rehearsalProfile, rehearsalIntent } = await import('../tools/prepare-rehearsal.mjs');
+  const original = await loadConfig(sample);
+  const { detail, checkout } = rehearsalProfile(original.profile, '1100435904158', 'h5').stages;
+  assert.equal(detail.query.id, '1100435904158');
+  assert.match(detail.actions.enter.selector, /\.buy-link/u);
+  assert.equal(checkout.origin, 'https://m.damai.cn');
+  assert.equal(checkout.path, '/app/dmfe/h5-ultron-buy/index.html');
+  assert.equal(checkout.query, undefined);
+  const result = rehearsalIntent(original.intent, {
+    stage: 'detail', loggedIn: true, blocked: false, soldOut: false,
+    fields: { event: '演练演出', session: '周四 20:30', tier: '演练票档' },
+    controls: { enter: { enabled: true } },
+  });
+  assert.equal(result.saleAt, null);
+  assert.equal(result.quantity, original.intent.attendees.length);
+  assert.deepEqual(result.attendees, original.intent.attendees);
+  assert.equal(original.profile.stages.detail.query.id, '1102631725191');
+  assert.ok(original.intent.saleAt);
+  assert.throws(() => rehearsalProfile(original.profile, 'not-an-id', 'h5'), /invalid_rehearsal_arguments/);
+  assert.throws(() => rehearsalProfile(original.profile, '1100435904158', 'generic'), /invalid_rehearsal_arguments/);
+});
