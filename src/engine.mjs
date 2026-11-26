@@ -5,7 +5,7 @@ const submitLabels = new Set(['提交订单', '立即提交', '确认下单', '�
 const clean = value => typeof value === 'string' ? value.trim().replace(/\s+/gu, ' ') : '';
 const eventKey = value => clean(value).replace(/】 +/gu, '】').replace(/ *[|｜] */gu, '|');
 const count = value => {
-  const digits = String(value ?? '').trim().match(/^(\d+)\s*张?$/u);
+  const digits = String(value ?? '').trim().match(/^(?:[×xX]\s*)?(\d+)\s*张?$/u);
   return digits ? Number(digits[1]) : NaN;
 };
 

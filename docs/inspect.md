@@ -64,3 +64,11 @@ node .\tools\probe-rehearsal.mjs --open 1100435904158
 ```powershell
 node .\tools\probe-rehearsal.mjs --watch-check
 ```
+
+北京场 H5 确认页已获得自定义勾选框的样例。保持确认页打开，确认张数与本机配置中保存的观演人数一致，再运行下列演练命令。也可以在该场详情页运行，已选场次和票档会沿用。进入确认页后只允许点击观演人，核对勾选和「立即提交」按钮之后结束。
+
+```powershell
+node .\tools\probe-rehearsal.mjs --rehearse 1100435904158
+```
+
+出现 `rehearsed` 表示到达提交前；`practice_quantity_unverified` 时检查页面张数是否与本机配置人数一致。

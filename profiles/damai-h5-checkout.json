@@ -1,0 +1,27 @@
+{
+  "origin": "https://m.damai.cn",
+  "path": "/app/dmfe/h5-ultron-buy/index.html",
+  "ready": "#dmItemBlock_DmItemBlock",
+  "login": "#dmViewerBlock_DmViewerBlock:has(.viwer-info-name)",
+  "fields": {
+    "event": "#dmItemBlock_DmItemBlock > div:first-of-type > div > div:first-of-type > div:nth-of-type(3) > div:first-of-type > div:first-of-type > span",
+    "session": "#dmItemBlock_DmItemBlock > div:first-of-type > div > div:first-of-type > div:nth-of-type(3) > div:first-of-type > div:nth-of-type(3) > span",
+    "tier": "#dmItemBlock_DmItemBlock > div:first-of-type > div > div:first-of-type > div:nth-of-type(4) > div > div > div:first-of-type",
+    "quantity": "#dmItemBlock_DmItemBlock > div:first-of-type > div > div:first-of-type > div:nth-of-type(4) > div > div > div:first-of-type > div:nth-of-type(2) > span",
+    "attendees": "#dmViewerBlock_DmViewerBlock > div:nth-of-type(2) > div > div:has(> div:nth-of-type(2) > i.icondanxuan-xuanzhong_) .viwer-info-name > div"
+  },
+  "choices": {
+    "attendee": {
+      "rows": "#dmViewerBlock_DmViewerBlock > div:nth-of-type(2) > div > div:has(.viwer-info-name)",
+      "label": ".viwer-info-name > div",
+      "control": ":scope > div:nth-of-type(2) > i.iconfont:is(.icondanxuan-weixuan_, .icondanxuan-xuanzhong_)",
+      "selected": ":scope > div:nth-of-type(2) > i.icondanxuan-xuanzhong_"
+    }
+  },
+  "actions": {
+    "submit": {
+      "selector": "#dmOrderSubmitBlock_DmOrderSubmitBlock > div:nth-of-type(2) > div > div:nth-of-type(3) > div:nth-of-type(2) > div:nth-of-type(3) > span",
+      "labels": ["立即提交"]
+    }
+  }
+}

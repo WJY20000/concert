@@ -1,8 +1,10 @@
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { loadConfig } from '../src/config.mjs';
+import { runCheckout } from '../src/engine.mjs';
 import { attachWebPage } from '../src/web.mjs';
 import { rehearsalIntent, rehearsalProfile } from './prepare-rehearsal.mjs';
 
@@ -124,6 +126,14 @@ function routeOf(page) {
   return url.origin + url.pathname;
 }
 
+function matchingDetails(tabs, itemId) {
+  return tabs.filter(page => {
+    const url = new URL(page.url());
+    const ids = url.searchParams.getAll('id');
+    return routeOf(page) === 'https://detail.damai.cn/item.htm' && ids.length === 1 && ids[0] === itemId;
+  });
+}
+
 const quantityOf = value => Number(String(value ?? '').match(/^(\d+)\s*张?$/u)?.[1]);
 
 export async function openCheckoutForProbe(page, profile, intent, itemId) {
@@ -231,21 +241,75 @@ async function watchCheckbox(page, names) {
   return { route, selectors: before.selectors, attendees, changed };
 }
 
+function h5Ticket(page, itemId) {
+  const url = new URL(page.url());
+  if (url.origin + url.pathname !== 'https://m.damai.cn/app/dmfe/h5-ultron-buy/index.html') return null;
+  const values = url.searchParams.getAll('buyParam');
+  const parts = values.length === 1 && values[0].match(/^(\d+)_(\d+)_(\d+)$/u);
+  if (!parts || parts[1] !== itemId || !Number.isSafeInteger(Number(parts[2]))) return null;
+  return { buyParam: values[0], quantity: Number(parts[2]) };
+}
+
+export async function rehearseH5(page, profile, intent, itemId, emit) {
+  const ticket = h5Ticket(page, itemId);
+  if (!ticket) throw new Error('practice_checkout_item_unverified');
+  if (ticket.quantity !== intent.attendees.length) throw new Error('practice_quantity_unverified');
+  const file = new URL('../profiles/damai-h5-checkout.json', import.meta.url);
+  const checkout = JSON.parse(await readFile(file, 'utf8'));
+  checkout.query = { buyParam: ticket.buyParam };
+  const adapter = attachWebPage(page, {
+    blockers: profile.blockers, soldOut: profile.soldOut, stages: { checkout },
+  });
+  try {
+    await page.waitForLoadState('domcontentloaded', { timeout: 5000 });
+    const deadline = Date.now() + 5000;
+    let fields;
+    do {
+      const view = await adapter.snapshot();
+      if (view.blocked || view.soldOut) throw new Error('practice_checkout_fields_unverified');
+      if (view.stage === 'checkout' && ['event', 'session', 'tier', 'quantity'].every(key => view.fields[key])) {
+        fields = view.fields;
+        break;
+      }
+      await sleep(100);
+    } while (Date.now() < deadline);
+    if (!fields) throw new Error('practice_checkout_fields_unverified');
+    // Use the displayed details of this verified rehearsal page. Live intent has its own configuration.
+    const { event, session, tier } = fields;
+    // This entry point cannot invoke submit, including if the shared runner changes later.
+    const guarded = {
+      snapshot: adapter.snapshot,
+      click(view, key) {
+        if (view.stage !== 'checkout' || !key.startsWith('attendee:')) throw new Error('practice_checkout_action_denied');
+        return adapter.click(view, key);
+      },
+    };
+    return await runCheckout(guarded, {
+      ...intent, event, session, tier, quantity: ticket.quantity, saleAt: null, seats: [],
+    }, { platform: 'web', mode: 'rehearse', emit });
+  } finally {
+    await adapter.close();
+  }
+}
+
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   const safe = new Set([
     'open_one_damai_checkout_in_debug_chrome', 'open_one_selected_detail_in_debug_chrome',
     'web_cdp_connect_failed', 'loopback_cdp_required', 'invalid_rehearsal_arguments', 'web_stale_view', 'web_click_unconfirmed',
     'practice_detail_not_ready', 'practice_quantity_unverified', 'practice_detail_changed', 'practice_checkout_not_reached',
+    'practice_checkout_item_unverified', 'practice_checkout_fields_unverified',
   ]);
   try {
     const [first, itemId, openConfig, extra] = process.argv.slice(2);
     const open = first === '--open';
+    const rehearse = first === '--rehearse';
     const watch = first === '--watch-check';
-    if ((open && (!/^\d{6,20}$/u.test(itemId ?? '') || extra)) ||
-        (watch && openConfig) || (!open && !watch && itemId)) {
+    if (((open || rehearse) && (!/^\d{6,20}$/u.test(itemId ?? '') || extra)) ||
+        (watch && openConfig) || (!open && !rehearse && !watch && itemId)) {
       throw new Error('invalid_rehearsal_arguments');
     }
-    const { intent, profile } = await loadConfig((open ? openConfig : watch ? itemId : first) ?? 'config.local.json', { platform: 'web' });
+    const filename = (open || rehearse ? openConfig : watch ? itemId : first) ?? 'config.local.json';
+    const { intent, profile } = await loadConfig(filename, { platform: 'web' });
     const endpoint = new URL(profile.cdp);
     if (endpoint.protocol !== 'http:' || !['127.0.0.1', '[::1]'].includes(endpoint.hostname) ||
         !endpoint.port || endpoint.pathname !== '/' || endpoint.username || endpoint.password ||
@@ -253,17 +317,26 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     const browser = await chromium.connectOverCDP(endpoint.href, { timeout: 5000 })
       .catch(() => { throw new Error('web_cdp_connect_failed'); });
     try {
-      const pages = browser.contexts().flatMap(context => context.pages()).filter(page => {
-        const url = new URL(page.url());
-        if (!open) return checkoutRoutes.has(routeOf(page));
-        const ids = url.searchParams.getAll('id');
-        return routeOf(page) === 'https://detail.damai.cn/item.htm' && ids.length === 1 && ids[0] === itemId;
-      });
-      if (pages.length !== 1) throw new Error(open
-        ? 'open_one_selected_detail_in_debug_chrome' : 'open_one_damai_checkout_in_debug_chrome');
-      const target = open ? await openCheckoutForProbe(pages[0], profile, intent, itemId) : pages[0];
-      const result = watch ? await watchCheckbox(target, intent.attendees) : await probePage(target, intent.attendees);
-      console.log(JSON.stringify(result));
+      const tabs = browser.contexts().flatMap(context => context.pages());
+      if (rehearse) {
+        const pages = tabs.filter(page => h5Ticket(page, itemId));
+        if (pages.length > 1) throw new Error('practice_checkout_item_unverified');
+        let target = pages[0];
+        if (!target) {
+          const details = matchingDetails(tabs, itemId);
+          if (details.length !== 1) throw new Error('practice_checkout_item_unverified');
+          target = await openCheckoutForProbe(details[0], profile, intent, itemId);
+        }
+        const result = await rehearseH5(target, profile, intent, itemId, event => console.log(JSON.stringify(event)));
+        if (result.status !== 'rehearsed') process.exitCode = 1;
+      } else {
+        const pages = open ? matchingDetails(tabs, itemId) : tabs.filter(page => checkoutRoutes.has(routeOf(page)));
+        if (pages.length !== 1) throw new Error(open
+          ? 'open_one_selected_detail_in_debug_chrome' : 'open_one_damai_checkout_in_debug_chrome');
+        const target = open ? await openCheckoutForProbe(pages[0], profile, intent, itemId) : pages[0];
+        const result = watch ? await watchCheckbox(target, intent.attendees) : await probePage(target, intent.attendees);
+        console.log(JSON.stringify(result));
+      }
     } finally {
       await browser.close();
     }
