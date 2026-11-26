@@ -151,6 +151,7 @@ export async function openCheckoutForProbe(page, profile, intent, itemId) {
   page.on('popup', follow);
   try {
     let view = await adapter.snapshot();
+    if (view.blocked) throw new Error('challenge');
     const target = rehearsalIntent(intent, view);
     const sameSelection = now => now.stage === 'detail' && now.loggedIn && !now.blocked && !now.soldOut &&
       ['event', 'session', 'tier'].every(key => now.fields[key] === target[key]);
@@ -169,6 +170,7 @@ export async function openCheckoutForProbe(page, profile, intent, itemId) {
       const deadline = Date.now() + 2500;
       do {
         view = await adapter.snapshot();
+        if (view.blocked) throw new Error('challenge');
         if (!sameSelection(view)) throw new Error('practice_detail_changed');
         if (quantityOf(view.fields.quantity) === expected) break;
         await sleep(80);
@@ -181,6 +183,7 @@ export async function openCheckoutForProbe(page, profile, intent, itemId) {
     }
     const deadline = Date.now() + 12_000;
     while (Date.now() < deadline) {
+      if ((await adapter.snapshot()).blocked) throw new Error('challenge');
       if (checkoutRoutes.has(routeOf(active))) return active;
       await sleep(100);
     }
@@ -198,6 +201,9 @@ async function probePage(page, names) {
   let structure;
   const deadline = Date.now() + 5000;
   do {
+    if (await page.locator('body').innerText().then(text => text.includes('检测到您的访问异常'))) {
+      throw new Error('challenge');
+    }
     structure = await page.evaluate(inspectControls, names);
     if (routeOf(page) !== route) throw new Error('practice_checkout_not_reached');
     if (structure.viewerHeading.length || structure.submit.length) break;
@@ -266,7 +272,8 @@ export async function rehearseH5(page, profile, intent, itemId, emit) {
     let fields;
     do {
       const view = await adapter.snapshot();
-      if (view.blocked || view.soldOut) throw new Error('practice_checkout_fields_unverified');
+      if (view.blocked) throw new Error('challenge');
+      if (view.soldOut) throw new Error('sold_out');
       if (view.stage === 'checkout' && ['event', 'session', 'tier', 'quantity'].every(key => view.fields[key])) {
         fields = view.fields;
         break;
@@ -297,7 +304,7 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     'open_one_damai_checkout_in_debug_chrome', 'open_one_selected_detail_in_debug_chrome',
     'web_cdp_connect_failed', 'loopback_cdp_required', 'invalid_rehearsal_arguments', 'web_stale_view', 'web_click_unconfirmed',
     'practice_detail_not_ready', 'practice_quantity_unverified', 'practice_detail_changed', 'practice_checkout_not_reached',
-    'practice_checkout_item_unverified', 'practice_checkout_fields_unverified',
+    'practice_checkout_item_unverified', 'practice_checkout_fields_unverified', 'challenge', 'sold_out',
   ]);
   try {
     const [first, itemId, openConfig, extra] = process.argv.slice(2);

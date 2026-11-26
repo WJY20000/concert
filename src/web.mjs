@@ -79,7 +79,11 @@ function inspectDocument({ profile, candidates, url, prior, key, arm, diagnose }
   const find = (root, css) => (css === ':scope' ? [root] : [...root.querySelectorAll(css)]).filter(visible);
   const text = element => normalize(/^(INPUT|TEXTAREA|SELECT)$/u.test(element.tagName)
     ? element.value : (element.innerText ?? element.textContent));
-  view.blocked = profile.blockers.some(css => find(document, css).length > 0);
+  const accessNotice = '检测到您的访问异常';
+  const damaiPage = /(^|\.)damai\.cn$/u.test(location.hostname);
+  view.blocked = profile.blockers.some(css => find(document, css).length > 0) ||
+    Boolean(damaiPage && document.body?.textContent.includes(accessNotice) &&
+      document.body.innerText.includes(accessNotice));
   view.soldOut = profile.soldOut.some(css => find(document, css).length > 0);
   const markers = candidates.map(stage => ({ stage, ready: find(document, profile.stages[stage].ready).length }));
   if (diagnose) {
@@ -92,8 +96,7 @@ function inspectDocument({ profile, candidates, url, prior, key, arm, diagnose }
   view.stage = ready[0].stage;
   const stage = profile.stages[view.stage];
   view.loggedIn = find(document, stage.login).length === 1;
-  const damaiOptions = /(^|\.)damai\.cn$/u.test(location.hostname) &&
-    ['detail', 'options'].includes(view.stage);
+  const damaiOptions = damaiPage && ['detail', 'options'].includes(view.stage);
   const optionText = (name, value) => damaiOptions && ['session', 'tier'].includes(name)
     ? value.replace(/\s*可预约$/u, '') : value;
   for (const [name, field] of Object.entries(stage.fields ?? {})) {

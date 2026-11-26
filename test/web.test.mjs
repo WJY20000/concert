@@ -552,3 +552,16 @@ test('H5 rehearsal fills the missing exact-name attendee and stops on the observ
   await assert.rejects(() => rehearseH5(page, sample, intent, '1102631725191'), /practice_checkout_item_unverified/u);
   assert.deepEqual(await page.evaluate(() => [window.clicks, window.submitted]), [1, false]);
 });
+
+test('visible Damai access exception halts purchase even when the checkout selectors no longer match', async t => {
+  const { runCheckout } = await import('../src/engine.mjs');
+  const { adapter, page } = await fixture(t);
+  await page.locator('body').evaluate(body => {
+    body.innerHTML = '<main><p>亲，检测到您的访问异常，请重新试试吧~</p></main>';
+  });
+  const snapshot = await adapter.snapshot();
+  assert.equal(snapshot.stage, 'unknown');
+  assert.equal(snapshot.blocked, true);
+  const result = await runCheckout(adapter, { saleAt: null }, { mode: 'rehearse' });
+  assert.equal(result.status, 'challenge');
+});
