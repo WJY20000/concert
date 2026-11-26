@@ -52,3 +52,9 @@ node .\tools\prepare-rehearsal.mjs 1100435904158 h5
 ```powershell
 node .\tools\probe-rehearsal.mjs
 ```
+
+从**在售演练场的详情页**开始时，可以由探针点击购票入口。它先核对已选场次和票档，再根据本机配置的观演人数调整张数，打开确认页后只采集控件结构。
+
+```powershell
+node .\tools\probe-rehearsal.mjs --open 1100435904158
+```

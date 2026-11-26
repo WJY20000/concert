@@ -435,3 +435,52 @@ test('checkout probe reports mapped structure while leaving names and other pers
   assert.equal(result.ticketLine[0][0].classes[0], 'sku');
   assert.doesNotMatch(JSON.stringify(result), /演示甲|演示乙|12345678901/u);
 });
+
+test('probe can set the rehearsal quantity and follow a QR link without selecting or submitting', async t => {
+  const { readFile } = await import('node:fs/promises');
+  const { openCheckoutForProbe } = await import('../tools/probe-rehearsal.mjs');
+  const profile = JSON.parse(await readFile(new URL('../profiles/web.json', import.meta.url), 'utf8'));
+  const item = '1100435904158';
+  const address = 'https://detail.damai.cn/item.htm?id=' + item;
+  const confirm = 'https://m.damai.cn/app/dmfe/h5-ultron-buy/index.html';
+  const context = await browser.newContext({ offline: true, serviceWorkers: 'block' });
+  t.after(() => context.close());
+  const html = `<header class="user-header"><a class="J_userinfo_name"><span class="name-user">演示账号</span></a></header>
+    <div class="perform"><div class="order">
+      <div class="title"><span class="tip">总票代</span><span>【北京】演练音乐会</span></div>
+      <div class="perform__order__box">
+        <div class="perform__order__select__performs">
+          <div class="select_right_list_item active"><span>2026-12-31 周四 20:00</span></div>
+        </div>
+        <div class="select_right_list_item sku_item active"><div class="skuname">247元票档</div></div>
+        <div class="perform__order__price"><div class="number">
+          <button class="plus" onclick="document.querySelector('.num').textContent='2 张'">+</button>
+          <span class="num">1 张</span>
+        </div></div>
+        <div class="qrcode-wrapper"><a class="buy-link" target="_blank" href="${confirm}?fixture=ok">不，立即购票</a></div>
+      </div>
+    </div></div>`;
+  let slide = 0;
+  let submit = 0;
+  await context.route('**/*', route => {
+    const request = route.request();
+    if (request.url() === address) return route.fulfill({ contentType: 'text/html; charset=utf-8', body: html });
+    if (request.url().startsWith(confirm + '?')) {
+      slide++;
+      return route.fulfill({ contentType: 'text/html; charset=utf-8',
+        body: '<h1>实名观演人</h1><input type="checkbox"><input type="checkbox">' +
+          '<button onclick="fetch(\'/offline-submit\', {method:\'POST\'})">立即提交</button>' });
+    }
+    if (request.method() === 'POST') submit++;
+    return route.abort();
+  });
+  const page = await context.newPage();
+  await page.goto(address);
+  const reached = await openCheckoutForProbe(page, profile, { attendees: ['演示甲', '演示乙'] }, item);
+  await reached.waitForLoadState('domcontentloaded');
+  assert.equal(await page.locator('.num').textContent(), '2 张');
+  assert.equal(reached.url(), confirm + '?fixture=ok');
+  assert.equal(await reached.locator('input:checked').count(), 0);
+  assert.equal(slide, 1);
+  assert.equal(submit, 0);
+});
